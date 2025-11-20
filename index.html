@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Участки на Яндекс.Карте</title>
+    <style>
+        html, body {
+            margin: 0;
+            padding: 0;
+            height: 100%;
+        }
+        #map {
+            width: 100%;
+            height: 100vh;
+        }
+        /* Придаем подложке карт Yandex серо-темный оттенок */
+        #map .ymaps-2-1-79-ground-pane {
+            filter: grayscale(1) brightness(0.55) saturate(0.7);
+        }
+    </style>
+</head>
+<body>
+<div id="map"></div>
+
+<script src="https://api-maps.yandex.ru/2.1/?apikey=ВАШ_API_KEY&lang=ru_RU"></script>
+<script>
+    ymaps.ready(init);
+
+    function init() {
+        const map = new ymaps.Map("map", {
+            center: [55.5856, 37.3970],
+            zoom: 16,
+            controls: ['zoomControl']
+        });
+
+        const parcels = [
+            {
+                id: 1,
+                status: "free",
+                coords: [
+                    [55.5862, 37.3955],
+                    [55.5863, 37.3963],
+                    [55.5857, 37.3964],
+                    [55.5856, 37.3956]
+                ]
+            },
+            {
+                id: 2,
+                status: "reserved",
+                coords: [
+                    [55.5863, 37.3963],
+                    [55.5861, 37.3972],
+                    [55.5856, 37.3973],
+                    [55.5857, 37.3964]
+                ]
+            },
+            {
+                id: 3,
+                status: "sold",
+                coords: [
+                    [55.5861, 37.3972],
+                    [55.5859, 37.3981],
+                    [55.5854, 37.3980],
+                    [55.5856, 37.3973]
+                ]
+            },
+            {
+                id: 4,
+                status: "free",
+                coords: [
+                    [55.5856, 37.3956],
+                    [55.5857, 37.3964],
+                    [55.5851, 37.3965],
+                    [55.5850, 37.3958]
+                ]
+            },
+            {
+                id: 5,
+                status: "sold",
+                coords: [
+                    [55.5857, 37.3964],
+                    [55.5856, 37.3973],
+                    [55.5850, 37.3974],
+                    [55.5851, 37.3965]
+                ]
+            },
+            {
+                id: 6,
+                status: "reserved",
+                coords: [
+                    [55.5856, 37.3973],
+                    [55.5854, 37.3980],
+                    [55.5848, 37.3982],
+                    [55.5850, 37.3974]
+                ]
+            }
+        ];
+
+        const colors = {
+            free: { base: "rgba(116, 122, 134, 0.35)", hover: "rgba(190, 197, 214, 0.85)" },
+            reserved: { base: "rgba(181, 142, 51, 0.35)", hover: "rgba(255, 205, 111, 0.85)" },
+            sold: { base: "rgba(74, 25, 25, 0.75)", hover: "rgba(110, 38, 38, 0.95)" }
+        };
+
+        const statusLabels = {
+            free: "Свободен",
+            reserved: "Забронирован",
+            sold: "Продан"
+        };
+
+        parcels.forEach(p => {
+            const polygon = new ymaps.Polygon([p.coords], { parcelId: p.id }, {
+                fillColor: colors[p.status].base,
+                strokeColor: "#9B1C1C",
+                strokeWidth: 2
+            });
+
+            polygon.properties.set("hintContent", `Участок ${p.id}: ${statusLabels[p.status]}`);
+
+            polygon.events.add("click", () => {
+                const center = ymaps.util.bounds.getCenter(polygon.geometry.getBounds());
+                const content = `Участок ${p.id} (${statusLabels[p.status]})`;
+
+                map.balloon.close();
+                map.balloon.open(center, { contentBody: content });
+            });
+
+            polygon.events.add("mouseenter", () => {
+                polygon.options.set("fillColor", colors[p.status].hover);
+            });
+
+            polygon.events.add("mouseleave", () => {
+                polygon.options.set("fillColor", colors[p.status].base);
+            });
+
+            map.geoObjects.add(polygon);
+        });
+    }
+</script>
+</body>
+</html>
