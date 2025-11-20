@@ -2,18 +2,20 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <title>Участки на Яндекс.Карте</title>
+    <title>Земельные участки</title>
     <style>
         html, body {
             margin: 0;
             padding: 0;
             height: 100%;
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            background: #0b1220;
         }
         #map {
             width: 100%;
             height: 100vh;
         }
-        /* Придаем подложке карт Yandex серо-темный оттенок */
+        /* Приглушаем картографическую подложку */
         #map .ymaps-2-1-79-ground-pane {
             filter: grayscale(1) brightness(0.55) saturate(0.7);
         }
@@ -22,7 +24,7 @@
 <body>
 <div id="map"></div>
 
-<script src="https://api-maps.yandex.ru/2.1/?apikey=ВАШ_API_KEY&lang=ru_RU"></script>
+<script src="https://api-maps.yandex.ru/2.1/?apikey=???_API_KEY&lang=ru_RU"></script>
 <script>
     ymaps.ready(init);
 
@@ -37,6 +39,9 @@
             {
                 id: 1,
                 status: "free",
+                area: 10.6,
+                price: "3 450 000 ₽",
+                link: "/card/1",
                 coords: [
                     [55.5862, 37.3955],
                     [55.5863, 37.3963],
@@ -47,6 +52,9 @@
             {
                 id: 2,
                 status: "reserved",
+                area: 9.8,
+                price: "3 120 000 ₽",
+                link: "/card/2",
                 coords: [
                     [55.5863, 37.3963],
                     [55.5861, 37.3972],
@@ -57,6 +65,9 @@
             {
                 id: 3,
                 status: "sold",
+                area: 11.2,
+                price: "—",
+                link: "/card/3",
                 coords: [
                     [55.5861, 37.3972],
                     [55.5859, 37.3981],
@@ -67,6 +78,9 @@
             {
                 id: 4,
                 status: "free",
+                area: 8.9,
+                price: "2 980 000 ₽",
+                link: "/card/4",
                 coords: [
                     [55.5856, 37.3956],
                     [55.5857, 37.3964],
@@ -77,6 +91,9 @@
             {
                 id: 5,
                 status: "sold",
+                area: 9.4,
+                price: "—",
+                link: "/card/5",
                 coords: [
                     [55.5857, 37.3964],
                     [55.5856, 37.3973],
@@ -87,6 +104,9 @@
             {
                 id: 6,
                 status: "reserved",
+                area: 10.1,
+                price: "3 050 000 ₽",
+                link: "/card/6",
                 coords: [
                     [55.5856, 37.3973],
                     [55.5854, 37.3980],
@@ -97,9 +117,9 @@
         ];
 
         const colors = {
-            free: { base: "rgba(116, 122, 134, 0.35)", hover: "rgba(190, 197, 214, 0.85)" },
-            reserved: { base: "rgba(181, 142, 51, 0.35)", hover: "rgba(255, 205, 111, 0.85)" },
-            sold: { base: "rgba(74, 25, 25, 0.75)", hover: "rgba(110, 38, 38, 0.95)" }
+            free: { base: "rgba(52, 168, 83, 0.35)", hover: "rgba(52, 168, 83, 0.6)" },
+            reserved: { base: "rgba(120, 127, 138, 0.35)", hover: "rgba(120, 127, 138, 0.6)" },
+            sold: { base: "rgba(128, 0, 32, 0.55)", hover: "rgba(128, 0, 32, 0.75)" }
         };
 
         const statusLabels = {
@@ -108,32 +128,75 @@
             sold: "Продан"
         };
 
-        parcels.forEach(p => {
-            const polygon = new ymaps.Polygon([p.coords], { parcelId: p.id }, {
-                fillColor: colors[p.status].base,
-                strokeColor: "#9B1C1C",
+        function renderContent(parcel) {
+            const hasBooking = parcel.status === "free";
+            const bookingButton = hasBooking
+                ? `<a href="${parcel.link}" style="display:inline-flex;align-items:center;gap:8px;padding:10px 14px;background:#34A853;color:#fff;text-decoration:none;border-radius:8px;font-weight:600;">Забронировать</a>`
+                : "";
+
+            const visitLink = `<a href="${parcel.link}" style="color:#1a73e8;text-decoration:none;font-weight:600;">Перейти в карточку</a>`;
+
+            return `
+                <div style="font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; min-width: 240px;">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+                        <div style="font-size:14px;color:#6b7280;">Участок №${parcel.id}</div>
+                        <div style="padding:4px 8px;border-radius:12px;background:#f3f4f6;font-size:12px;color:#111827;">${statusLabels[parcel.status]}</div>
+                    </div>
+                    <div style="display:flex;gap:12px;align-items:center;margin-bottom:8px;">
+                        <div style="width:12px;height:12px;border-radius:999px;background:${colors[parcel.status].hover};box-shadow:0 0 0 3px rgba(0,0,0,0.06);"></div>
+                        <div style="font-size:15px;font-weight:600;color:#111827;">${parcel.price}</div>
+                        <div style="font-size:12px;color:#6b7280;">${parcel.area} сот.</div>
+                    </div>
+                    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+                        ${bookingButton}
+                        ${visitLink}
+                    </div>
+                </div>
+            `;
+        }
+
+        let openedParcelId = null;
+
+        parcels.forEach(parcel => {
+            const polygon = new ymaps.Polygon([parcel.coords], { parcelId: parcel.id }, {
+                fillColor: colors[parcel.status].base,
+                strokeColor: "#4c566a",
                 strokeWidth: 2
             });
 
-            polygon.properties.set("hintContent", `Участок ${p.id}: ${statusLabels[p.status]}`);
+            polygon.properties.set("hintContent", `Участок ${parcel.id}: ${statusLabels[parcel.status]}`);
 
             polygon.events.add("click", () => {
                 const center = ymaps.util.bounds.getCenter(polygon.geometry.getBounds());
-                const content = `Участок ${p.id} (${statusLabels[p.status]})`;
+                const isSame = openedParcelId === parcel.id && map.balloon.isOpen();
 
-                map.balloon.close();
-                map.balloon.open(center, { contentBody: content });
+                if (isSame) {
+                    map.balloon.close();
+                    openedParcelId = null;
+                    return;
+                }
+
+                map.balloon.open(center, { contentBody: renderContent(parcel) });
+                openedParcelId = parcel.id;
             });
 
             polygon.events.add("mouseenter", () => {
-                polygon.options.set("fillColor", colors[p.status].hover);
+                polygon.options.set("fillColor", colors[parcel.status].hover);
             });
 
             polygon.events.add("mouseleave", () => {
-                polygon.options.set("fillColor", colors[p.status].base);
+                polygon.options.set("fillColor", colors[parcel.status].base);
             });
 
             map.geoObjects.add(polygon);
+        });
+
+        map.events.add("click", (e) => {
+            // Закрываем балун по клику в пустую область
+            if (e.get("target") === map) {
+                map.balloon.close();
+                openedParcelId = null;
+            }
         });
     }
 </script>
