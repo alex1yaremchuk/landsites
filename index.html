@@ -15,7 +15,7 @@
             width: 100%;
             height: 100vh;
         }
-        /* Приглушаем картографическую подложку */
+        /* Приглушаем подложку карты */
         #map .ymaps-2-1-79-ground-pane {
             filter: grayscale(1) brightness(0.55) saturate(0.7);
         }
@@ -156,6 +156,7 @@
         }
 
         let openedParcelId = null;
+        const polygonById = new Map();
 
         parcels.forEach(parcel => {
             const polygon = new ymaps.Polygon([parcel.coords], { parcelId: parcel.id }, {
@@ -189,6 +190,7 @@
             });
 
             map.geoObjects.add(polygon);
+            polygonById.set(parcel.id, polygon);
         });
 
         map.events.add("click", (e) => {
@@ -198,6 +200,54 @@
                 openedParcelId = null;
             }
         });
+
+        // Подтягиваем актуальные статусы из Google Sheet
+        const sheetUrl = "https://docs.google.com/spreadsheets/d/e/2PACX-1vR3xNzYxN5m81iBLPw1DfO-ACg_bFrFRVKXj0MH0XhsKwfgeyhf-nQrkRMguWVASlhn_15amEGx6dgd/pub?gid=1663025527&single=true&output=csv";
+
+        function normalizeStatus(text) {
+            const value = (text || "").trim().toLowerCase();
+            if (!value) return null;
+            if (value.includes("свобод")) return "free";
+            if (value.includes("брон")) return "reserved";
+            if (value.includes("прод")) return "sold";
+            return null;
+        }
+
+        function applyStatusUpdates(updates) {
+            updates.forEach(({ id, status }) => {
+                const parcel = parcels.find(p => p.id === id);
+                const polygon = polygonById.get(id);
+                if (!parcel || !polygon || !colors[status]) return;
+
+                parcel.status = status;
+
+                polygon.options.set("fillColor", colors[status].base);
+                polygon.properties.set("hintContent", `Участок ${id}: ${statusLabels[status]}`);
+
+                // Закрываем балун, чтобы не показывать устаревшие данные
+                if (openedParcelId === id && map.balloon.isOpen()) {
+                    map.balloon.close();
+                    openedParcelId = null;
+                }
+            });
+        }
+
+        fetch(sheetUrl)
+            .then(resp => resp.text())
+            .then(text => {
+                const lines = text.trim().split(/\r?\n/);
+                const dataLines = lines.slice(1); // пропускаем заголовок
+
+                const updates = dataLines.map(row => {
+                    const [idRaw, statusRaw] = row.split(",");
+                    return { id: Number(idRaw), status: normalizeStatus(statusRaw) };
+                }).filter(item => item.id && item.status);
+
+                applyStatusUpdates(updates);
+            })
+            .catch(() => {
+                // Если таблица недоступна, остаёмся на статичных данных
+            });
     }
 </script>
 </body>
