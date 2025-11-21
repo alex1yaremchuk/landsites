@@ -11,7 +11,11 @@
             font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
             background: #0b1220;
         }
-        #map { width: 100%; height: 100vh; }
+        #map {
+            width: 100%;
+            height: 100vh;
+        }
+        /* Приглушаем подложку для Yandex */
         #map .ymaps-2-1-79-ground-pane {
             filter: grayscale(1) brightness(0.55) saturate(0.7);
         }
@@ -20,28 +24,34 @@
 <body>
 <div id="map"></div>
 
+<!-- Локальные Leaflet без ключей -->
 <link rel="stylesheet" href="./leaflet.css"/>
 <script src="./leaflet.js"></script>
+<!-- Yandex API с ключом -->
 <script src="https://api-maps.yandex.ru/2.1/?apikey=bb452fd0-002b-4c60-a321-d7ab9e326744&lang=ru_RU"></script>
 
 <script>
     const useLeaflet = false; // true = Leaflet, false = Yandex
 
     const sheetUrl = "https://docs.google.com/spreadsheets/d/e/2PACX-1vR3xNzYxN5m81iBLPw1DfO-ACg_bFrFRVKXj0MH0XhsKwfgeyhf-nQrkRMguWVASlhn_15amEGx6dgd/pub?gid=1663025527&single=true&output=csv";
-    const geojsonUrl = "genplan_vega_polygons.geojson"; // локальные координаты
+    const geojsonUrl = "genplan_vega_polygons.geojson";
 
     const colors = {
         free: { base: "rgba(52, 168, 83, 0.35)", hover: "rgba(52, 168, 83, 0.6)" },
         reserved: { base: "rgba(120, 127, 138, 0.35)", hover: "rgba(120, 127, 138, 0.6)" },
         sold: { base: "rgba(128, 0, 32, 0.55)", hover: "rgba(128, 0, 32, 0.75)" }
     };
+
     const statusLabels = { free: "Свободен", reserved: "Забронирован", sold: "Продан" };
 
-    const serviceIds = new Set([1, 2, 20, 24, 36, 60, 65, 94, 95]); // плюс все без real_id считаем служебными
-    const serviceOffset = 1000;
-    const realIdField = "real_id";
+    // служебные — все без id
+    const labelFontSizePx = 12;
+    const showLabelsFromZoom = 16;
+    const labelScaleMin = 0.5;
+    const labelScaleMax = 1.6;
+    const labelScaleFactor = 1.15;
 
-    // трансформация (не меняем)
+    // Трансформация (не трогаем)
     const transformCfg = {
         srcCenter: { x: 2225243.57545574, y: 425916.58015801 },
         angleRad: 0,
@@ -52,15 +62,8 @@
         offsetY: -135
     };
 
-    const labelFontSizePx = 12;
-    const showLabelsFromZoom = 16;
-    const labelScaleMin = 0.5;
-    const labelScaleMax = 1.6;
-    const labelScaleFactor = 1.15;
-
     const metersPerDegLat = 111320;
     const kx = metersPerDegLat * Math.cos(transformCfg.targetCenter.lat * Math.PI / 180);
-
     const openedState = { id: null };
 
     function centroid(coords) {
@@ -102,7 +105,7 @@
             const realId = Number(idRaw);
             const status = normalizeStatus(statusRaw);
             if (!realId || !status) return;
-            map.set(realId, status); // таблица хранит real_id
+            map.set(realId, status);
         });
         return map;
     }
@@ -112,22 +115,19 @@
         if (!resp.ok) throw new Error("GeoJSON not found");
         const data = await resp.json();
         return data.features.map((f, idx) => {
-            const rawId = Number(f.properties?.id ?? idx + 1);
-            const realId = f.properties?.[realIdField] ?? null;
-            const isService = serviceIds.has(rawId) || realId === null || realId === undefined;
-            const id = isService ? rawId + serviceOffset : rawId;
+            const id = f.properties?.id ?? null; // id == real_id
+            const numericId = id === null ? null : Number(id);
+            const isService = !numericId;
             const coords = f.geometry.type === "Polygon"
                 ? f.geometry.coordinates[0]
                 : f.geometry.coordinates[0][0];
             const latlon = coords.map(([x, y]) => applyTransform(x, y));
             return {
-                id,
-                rawId,
-                realId,
+                id: numericId,
                 coords: latlon,
                 area: f.properties?.area ?? 1,
                 price: f.properties?.price ?? "—",
-                link: `/card/${id}`,
+                link: `/card/${numericId ?? ''}`,
                 status: "free",
                 isService
             };
@@ -140,7 +140,7 @@
         const bookingButton = hasBooking
             ? `<a href="${parcel.link}" style="display:inline-flex;align-items:center;gap:8px;padding:12px 16px;background:#34A853;color:#fff;text-decoration:none;border-radius:10px;font-weight:700;">Забронировать</a>`
             : "";
-        const displayId = parcel.realId ?? parcel.rawId;
+        const displayId = parcel.id ?? "—";
         const statusText = statusLabels[parcel.status] ?? "";
         const statusColor = statusColors[parcel.status] ?? "#111827";
 
@@ -190,7 +190,7 @@
 
         parcels.filter(p => !p.isService).forEach(parcel => {
             const center = centroid(parcel.coords);
-            const label = new ymaps.Placemark(center, { iconContent: parcel.realId ?? parcel.rawId }, {
+            const label = new ymaps.Placemark(center, { iconContent: parcel.id ?? "" }, {
                 iconLayout: layout,
                 draggable: false,
                 hasBalloon: false,
@@ -220,7 +220,7 @@
         const markers = parcels.filter(p => !p.isService).map(parcel => {
             const [clat, clon] = centroid(parcel.coords);
             const scale = makeLabelScale(map.getZoom(), baseZoom);
-            const icon = makeIcon(parcel.realId ?? parcel.rawId, scale);
+            const icon = makeIcon(parcel.id ?? "", scale);
             return L.marker([clat, clon], { icon, interactive: false }).addTo(group);
         });
 
@@ -238,7 +238,7 @@
             const visible = map.getZoom() >= showLabelsFromZoom;
             markers.forEach((m, idx) => {
                 const parcel = parcels.filter(p => !p.isService)[idx];
-                m.setIcon(makeIcon(parcel.realId ?? parcel.rawId, scale));
+                m.setIcon(makeIcon(parcel.id ?? "", scale));
             });
             if (visible && !map.hasLayer(group)) map.addLayer(group);
             if (!visible && map.hasLayer(group)) map.removeLayer(group);
@@ -282,8 +282,8 @@
 
         parcels.forEach(p => {
             if (p.isService) return;
-            if (p.realId && statusMap.has(p.realId)) {
-                p.status = statusMap.get(p.realId);
+            if (p.id && statusMap.has(p.id)) {
+                p.status = statusMap.get(p.id);
             }
         });
 
@@ -301,7 +301,7 @@
                 strokeWidth: 2
             });
 
-            polygon.properties.set("hintContent", `Участок ${parcel.realId ?? parcel.rawId}: ${statusLabels[parcel.status]}`);
+            polygon.properties.set("hintContent", `Участок ${parcel.id}: ${statusLabels[parcel.status]}`);
             polygon.events.add("click", () => openParcelBalloon(parcel, polygon, map));
             polygon.events.add("mouseenter", () => polygon.options.set("fillColor", colors[parcel.status].hover));
             polygon.events.add("mouseleave", () => polygon.options.set("fillColor", colors[parcel.status].base));
@@ -310,6 +310,14 @@
         });
 
         addYandexLabels(map, parcels, baseZoom);
+
+        // закрываем балун при клике в пустоту
+        map.events.add("click", (e) => {
+            if (e.get("target") === map) {
+                map.balloon.close();
+                openedState.id = null;
+            }
+        });
     }
 
     async function initLeaflet() {
@@ -339,8 +347,8 @@
 
         parcels.forEach(p => {
             if (p.isService) return;
-            if (p.realId && statusMap.has(p.realId)) {
-                p.status = statusMap.get(p.realId);
+            if (p.id && statusMap.has(p.id)) {
+                p.status = statusMap.get(p.id);
             }
         });
 
@@ -368,6 +376,11 @@
         });
 
         addLeafletLabels(map, parcels, baseZoom);
+
+        // Закрываем попап при клике в пустую область карты
+        map.on('click', () => {
+            map.closePopup();
+        });
     }
 
     if (useLeaflet) {
