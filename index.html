@@ -15,7 +15,7 @@
             width: 100%;
             height: 100vh;
         }
-        /* Приглушаем подложку карты */
+        /* Приглушаем подложку для Yandex */
         #map .ymaps-2-1-79-ground-pane {
             filter: grayscale(1) brightness(0.55) saturate(0.7);
         }
@@ -24,139 +24,170 @@
 <body>
 <div id="map"></div>
 
-<script src="https://api-maps.yandex.ru/2.1/?apikey=???_API_KEY&lang=ru_RU"></script>
-<script>
-    ymaps.ready(init);
+<!-- Локальные Leaflet (без ключей) -->
+<link rel="stylesheet" href="./leaflet.css"/>
+<script src="./leaflet.js"></script>
+<!-- Yandex API (с ключом) -->
+<script src="https://api-maps.yandex.ru/2.1/?apikey=bb452fd0-002b-4c60-a321-d7ab9e326744&lang=ru_RU"></script>
 
-    function init() {
+<script>
+    // Быстрая смена провайдера карты
+    const useLeaflet = false; // true = Leaflet, false = Yandex
+
+    const sheetUrl = "https://docs.google.com/spreadsheets/d/e/2PACX-1vR3xNzYxN5m81iBLPw1DfO-ACg_bFrFRVKXj0MH0XhsKwfgeyhf-nQrkRMguWVASlhn_15amEGx6dgd/pub?gid=1663025527&single=true&output=csv";
+    // Исходный GeoJSON в локальных координатах (до привязки)
+    const geojsonUrl = "genplan_vega_polygons.geojson";
+
+    const colors = {
+        free: { base: "rgba(52, 168, 83, 0.35)", hover: "rgba(52, 168, 83, 0.6)" },
+        reserved: { base: "rgba(120, 127, 138, 0.35)", hover: "rgba(120, 127, 138, 0.6)" },
+        sold: { base: "rgba(128, 0, 32, 0.55)", hover: "rgba(128, 0, 32, 0.75)" }
+    };
+
+    const statusLabels = {
+        free: "Свободен",
+        reserved: "Забронирован",
+        sold: "Продан"
+    };
+
+    // Аффинная трансформация локальных координат DXF -> WGS84 (по опорным точкам периметра)
+    const transformCfg = {
+        srcCenter: { x: 2225243.57545574, y: 425916.58015801 }, // центр локальной системы
+        angleRad: 0,          // без поворота
+        scaleX: 0.99,          // единый масштаб по осям
+        scaleY: 0.99,
+        targetCenter: { lon: 38.09308485714286, lat: 55.37329485714286 }, // центр опорных точек
+        offsetX: -120, // метры, восток +
+        offsetY: -135  // метры, север +
+    };
+
+    const metersPerDegLat = 111320;
+    const kx = metersPerDegLat * Math.cos(transformCfg.targetCenter.lat * Math.PI / 180);
+
+    function applyTransform(x, y) {
+        const { srcCenter, angleRad, scaleX, scaleY, targetCenter, offsetX, offsetY } = transformCfg;
+        let dx = x - srcCenter.x;
+        let dy = y - srcCenter.y;
+        const rx = dx * Math.cos(angleRad) - dy * Math.sin(angleRad);
+        const ry = dx * Math.sin(angleRad) + dy * Math.cos(angleRad);
+        let sx = rx * scaleX + offsetX;
+        let sy = ry * scaleY + offsetY;
+        const lon = sx / kx + targetCenter.lon;
+        const lat = sy / metersPerDegLat + targetCenter.lat;
+        return [lat, lon];
+    }
+
+    function normalizeStatus(text) {
+        const value = (text || "").trim().toLowerCase();
+        if (!value) return null;
+        if (value.includes("свобод")) return "free";
+        if (value.includes("брон") || value.includes("резерв")) return "reserved";
+        if (value.includes("прод")) return "sold";
+        return null;
+    }
+
+    async function loadStatuses() {
+        const resp = await fetch(sheetUrl);
+        const text = await resp.text();
+        const lines = text.trim().split(/\r?\n/).slice(1);
+        const map = new Map();
+        lines.forEach(row => {
+            const [idRaw, statusRaw] = row.split(",");
+            const id = Number(idRaw);
+            const status = normalizeStatus(statusRaw);
+            if (!id || !status) return;
+            map.set(id, status);
+        });
+        return map;
+    }
+
+    async function loadParcelsGeoJSON() {
+        const resp = await fetch(geojsonUrl);
+        if (!resp.ok) throw new Error("GeoJSON not found");
+        const data = await resp.json();
+        return data.features.map((f, idx) => {
+            const id = Number(f.properties?.id ?? idx + 1);
+            const coords = f.geometry.type === "Polygon"
+                ? f.geometry.coordinates[0]
+                : f.geometry.coordinates[0][0];
+            const latlon = coords.map(([x, y]) => applyTransform(x, y));
+            return {
+                id,
+                coords: latlon,
+                area: f.properties?.area ?? "—",
+                price: f.properties?.price ?? "—",
+                link: `/card/${id}`,
+                status: "free"
+            };
+        });
+    }
+
+    function renderContent(parcel) {
+        const hasBooking = parcel.status === "free";
+        const bookingButton = hasBooking
+            ? `<a href="${parcel.link}" style="display:inline-flex;align-items:center;gap:8px;padding:10px 14px;background:#34A853;color:#fff;text-decoration:none;border-radius:8px;font-weight:600;">Забронировать</a>`
+            : "";
+        const visitLink = `<a href="${parcel.link}" style="color:#1a73e8;text-decoration:none;font-weight:600;">Перейти в карточку</a>`;
+
+        return `
+            <div style="font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; min-width: 240px;">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+                    <div style="font-size:14px;color:#6b7280;">Участок №${parcel.id}</div>
+                    <div style="padding:4px 8px;border-radius:12px;background:#f3f4f6;font-size:12px;color:#111827;">${statusLabels[parcel.status]}</div>
+                </div>
+                <div style="display:flex;gap:12px;align-items:center;margin-bottom:8px;">
+                    <div style="width:12px;height:12px;border-radius:999px;background:${colors[parcel.status].hover};box-shadow:0 0 0 3px rgba(0,0,0,0.06);"></div>
+                    <div style="font-size:15px;font-weight:600;color:#111827;">${parcel.price}</div>
+                    <div style="font-size:12px;color:#6b7280;">${parcel.area} сот.</div>
+                </div>
+                <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+                    ${bookingButton}
+                    ${visitLink}
+                </div>
+            </div>
+        `;
+    }
+
+    function openParcelBalloon(parcel, polygon, mapInstance, openedState) {
+        const center = ymaps.util.bounds.getCenter(polygon.geometry.getBounds());
+        const isSame = openedState.id === parcel.id && mapInstance.balloon.isOpen();
+        if (isSame) {
+            mapInstance.balloon.close();
+            openedState.id = null;
+            return;
+        }
+        mapInstance.balloon.open(center, { contentBody: renderContent(parcel) });
+        openedState.id = parcel.id;
+    }
+
+    async function initYandex() {
         const map = new ymaps.Map("map", {
-            center: [55.5856, 37.3970],
-            zoom: 16,
+            center: [transformCfg.targetCenter.lat, transformCfg.targetCenter.lon],
+            zoom: 15,
             controls: ['zoomControl']
         });
 
-        const parcels = [
-            {
-                id: 1,
-                status: "free",
-                area: 10.6,
-                price: "3 450 000 ₽",
-                link: "/card/1",
-                coords: [
-                    [55.5862, 37.3955],
-                    [55.5863, 37.3963],
-                    [55.5857, 37.3964],
-                    [55.5856, 37.3956]
-                ]
-            },
-            {
-                id: 2,
-                status: "reserved",
-                area: 9.8,
-                price: "3 120 000 ₽",
-                link: "/card/2",
-                coords: [
-                    [55.5863, 37.3963],
-                    [55.5861, 37.3972],
-                    [55.5856, 37.3973],
-                    [55.5857, 37.3964]
-                ]
-            },
-            {
-                id: 3,
-                status: "sold",
-                area: 11.2,
-                price: "—",
-                link: "/card/3",
-                coords: [
-                    [55.5861, 37.3972],
-                    [55.5859, 37.3981],
-                    [55.5854, 37.3980],
-                    [55.5856, 37.3973]
-                ]
-            },
-            {
-                id: 4,
-                status: "free",
-                area: 8.9,
-                price: "2 980 000 ₽",
-                link: "/card/4",
-                coords: [
-                    [55.5856, 37.3956],
-                    [55.5857, 37.3964],
-                    [55.5851, 37.3965],
-                    [55.5850, 37.3958]
-                ]
-            },
-            {
-                id: 5,
-                status: "sold",
-                area: 9.4,
-                price: "—",
-                link: "/card/5",
-                coords: [
-                    [55.5857, 37.3964],
-                    [55.5856, 37.3973],
-                    [55.5850, 37.3974],
-                    [55.5851, 37.3965]
-                ]
-            },
-            {
-                id: 6,
-                status: "reserved",
-                area: 10.1,
-                price: "3 050 000 ₽",
-                link: "/card/6",
-                coords: [
-                    [55.5856, 37.3973],
-                    [55.5854, 37.3980],
-                    [55.5848, 37.3982],
-                    [55.5850, 37.3974]
-                ]
+        const [statusMap, parcels] = await Promise.all([
+            loadStatuses().catch(err => {
+                console.error("Не загрузили статусы", err);
+                return new Map();
+            }),
+            loadParcelsGeoJSON()
+        ]);
+
+        parcels.forEach(p => {
+            if (statusMap.has(p.id)) {
+                p.status = statusMap.get(p.id);
             }
-        ];
+        });
 
-        const colors = {
-            free: { base: "rgba(52, 168, 83, 0.35)", hover: "rgba(52, 168, 83, 0.6)" },
-            reserved: { base: "rgba(120, 127, 138, 0.35)", hover: "rgba(120, 127, 138, 0.6)" },
-            sold: { base: "rgba(128, 0, 32, 0.55)", hover: "rgba(128, 0, 32, 0.75)" }
-        };
-
-        const statusLabels = {
-            free: "Свободен",
-            reserved: "Забронирован",
-            sold: "Продан"
-        };
-
-        function renderContent(parcel) {
-            const hasBooking = parcel.status === "free";
-            const bookingButton = hasBooking
-                ? `<a href="${parcel.link}" style="display:inline-flex;align-items:center;gap:8px;padding:10px 14px;background:#34A853;color:#fff;text-decoration:none;border-radius:8px;font-weight:600;">Забронировать</a>`
-                : "";
-
-            const visitLink = `<a href="${parcel.link}" style="color:#1a73e8;text-decoration:none;font-weight:600;">Перейти в карточку</a>`;
-
-            return `
-                <div style="font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; min-width: 240px;">
-                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
-                        <div style="font-size:14px;color:#6b7280;">Участок №${parcel.id}</div>
-                        <div style="padding:4px 8px;border-radius:12px;background:#f3f4f6;font-size:12px;color:#111827;">${statusLabels[parcel.status]}</div>
-                    </div>
-                    <div style="display:flex;gap:12px;align-items:center;margin-bottom:8px;">
-                        <div style="width:12px;height:12px;border-radius:999px;background:${colors[parcel.status].hover};box-shadow:0 0 0 3px rgba(0,0,0,0.06);"></div>
-                        <div style="font-size:15px;font-weight:600;color:#111827;">${parcel.price}</div>
-                        <div style="font-size:12px;color:#6b7280;">${parcel.area} сот.</div>
-                    </div>
-                    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
-                        ${bookingButton}
-                        ${visitLink}
-                    </div>
-                </div>
-            `;
+        const openedState = { id: null };
+        const allCoords = parcels.flatMap(p => p.coords);
+        if (allCoords.length) {
+            const lats = allCoords.map(c => c[0]);
+            const lons = allCoords.map(c => c[1]);
+            map.setBounds([[Math.min(...lats), Math.min(...lons)], [Math.max(...lats), Math.max(...lons)]], { checkZoomRange: true, duration: 0 });
         }
-
-        let openedParcelId = null;
-        const polygonById = new Map();
 
         parcels.forEach(parcel => {
             const polygon = new ymaps.Polygon([parcel.coords], { parcelId: parcel.id }, {
@@ -166,88 +197,91 @@
             });
 
             polygon.properties.set("hintContent", `Участок ${parcel.id}: ${statusLabels[parcel.status]}`);
-
-            polygon.events.add("click", () => {
-                const center = ymaps.util.bounds.getCenter(polygon.geometry.getBounds());
-                const isSame = openedParcelId === parcel.id && map.balloon.isOpen();
-
-                if (isSame) {
-                    map.balloon.close();
-                    openedParcelId = null;
-                    return;
-                }
-
-                map.balloon.open(center, { contentBody: renderContent(parcel) });
-                openedParcelId = parcel.id;
-            });
-
-            polygon.events.add("mouseenter", () => {
-                polygon.options.set("fillColor", colors[parcel.status].hover);
-            });
-
-            polygon.events.add("mouseleave", () => {
-                polygon.options.set("fillColor", colors[parcel.status].base);
-            });
+            polygon.events.add("click", () => openParcelBalloon(parcel, polygon, map, openedState));
+            polygon.events.add("mouseenter", () => polygon.options.set("fillColor", colors[parcel.status].hover));
+            polygon.events.add("mouseleave", () => polygon.options.set("fillColor", colors[parcel.status].base));
 
             map.geoObjects.add(polygon);
-            polygonById.set(parcel.id, polygon);
         });
 
         map.events.add("click", (e) => {
-            // Закрываем балун по клику в пустую область
             if (e.get("target") === map) {
                 map.balloon.close();
-                openedParcelId = null;
+                openedState.id = null;
+            }
+        });
+    }
+
+    async function initLeaflet() {
+        if (!window.L) {
+            document.getElementById('map').innerText = "Leaflet не загрузился (проверь доступ к скрипту).";
+            return;
+        }
+        const map = L.map('map', {
+            center: [transformCfg.targetCenter.lat, transformCfg.targetCenter.lon],
+            zoom: 15,
+            zoomControl: true
+        });
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            maxZoom: 19,
+            attribution: '&copy; OpenStreetMap'
+        }).addTo(map);
+
+        const [statusMap, parcels] = await Promise.all([
+            loadStatuses().catch(err => {
+                console.error("Не загрузили статусы", err);
+                return new Map();
+            }),
+            loadParcelsGeoJSON()
+        ]);
+
+        parcels.forEach(p => {
+            if (statusMap.has(p.id)) {
+                p.status = statusMap.get(p.id);
             }
         });
 
-        // Подтягиваем актуальные статусы из Google Sheet
-        const sheetUrl = "https://docs.google.com/spreadsheets/d/e/2PACX-1vR3xNzYxN5m81iBLPw1DfO-ACg_bFrFRVKXj0MH0XhsKwfgeyhf-nQrkRMguWVASlhn_15amEGx6dgd/pub?gid=1663025527&single=true&output=csv";
-
-        function normalizeStatus(text) {
-            const value = (text || "").trim().toLowerCase();
-            if (!value) return null;
-            if (value.includes("свобод")) return "free";
-            if (value.includes("брон")) return "reserved";
-            if (value.includes("прод")) return "sold";
-            return null;
+        const allLatLng = parcels.flatMap(p => p.coords.map(([lat, lon]) => [lat, lon]));
+        if (allLatLng.length) {
+            const lats = allLatLng.map(c => c[0]);
+            const lons = allLatLng.map(c => c[1]);
+            map.fitBounds([[Math.min(...lats), Math.min(...lons)], [Math.max(...lats), Math.max(...lons)]], { padding: [20, 20] });
         }
 
-        function applyStatusUpdates(updates) {
-            updates.forEach(({ id, status }) => {
-                const parcel = parcels.find(p => p.id === id);
-                const polygon = polygonById.get(id);
-                if (!parcel || !polygon || !colors[status]) return;
+        parcels.forEach(parcel => {
+            const polygon = L.polygon(parcel.coords, {
+                color: "#4c566a",
+                weight: 2,
+                fillColor: colors[parcel.status].base,
+                fillOpacity: 1
+            }).addTo(map);
 
-                parcel.status = status;
-
-                polygon.options.set("fillColor", colors[status].base);
-                polygon.properties.set("hintContent", `Участок ${id}: ${statusLabels[status]}`);
-
-                // Закрываем балун, чтобы не показывать устаревшие данные
-                if (openedParcelId === id && map.balloon.isOpen()) {
-                    map.balloon.close();
-                    openedParcelId = null;
-                }
+            polygon.on('click', () => {
+                const content = renderContent(parcel);
+                polygon.bindPopup(content, { closeButton: true }).openPopup();
             });
+            polygon.on('mouseover', () => polygon.setStyle({ fillColor: colors[parcel.status].hover }));
+            polygon.on('mouseout', () => polygon.setStyle({ fillColor: colors[parcel.status].base }));
+        });
+    }
+
+    // Выбор провайдера
+    if (useLeaflet) {
+        initLeaflet().catch(err => {
+            console.error(err);
+            document.getElementById('map').innerText = "Не удалось загрузить карту (Leaflet): " + err;
+        });
+    } else {
+        if (window.ymaps) {
+            ymaps.ready(() => {
+                initYandex().catch(err => {
+                    console.error(err);
+                    document.getElementById('map').innerText = "Не удалось загрузить карту (Yandex): " + err;
+                });
+            });
+        } else {
+            document.getElementById('map').innerText = "Yandex Maps API не загрузился (проверь сеть/ключ).";
         }
-
-        fetch(sheetUrl)
-            .then(resp => resp.text())
-            .then(text => {
-                const lines = text.trim().split(/\r?\n/);
-                const dataLines = lines.slice(1); // пропускаем заголовок
-
-                const updates = dataLines.map(row => {
-                    const [idRaw, statusRaw] = row.split(",");
-                    return { id: Number(idRaw), status: normalizeStatus(statusRaw) };
-                }).filter(item => item.id && item.status);
-
-                applyStatusUpdates(updates);
-            })
-            .catch(() => {
-                // Если таблица недоступна, остаёмся на статичных данных
-            });
     }
 </script>
 </body>
