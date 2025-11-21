@@ -49,11 +49,12 @@
         sold: "Продан"
     };
 
+    // Служебные: те, у которых real_id нет, либо в списке ниже
     const serviceIds = new Set([1, 2, 20, 24, 36, 60, 65, 94, 95]);
     const serviceOffset = 1000;
-    const realIdField = "real_id"; // можно заполнять в properties реальными ID
+    const realIdField = "real_id";
 
-    // Трансформация (как у тебя — без изменений)
+    // Трансформация (не меняем)
     const transformCfg = {
         srcCenter: { x: 2225243.57545574, y: 425916.58015801 },
         angleRad: 0,
@@ -64,8 +65,13 @@
         offsetY: -135
     };
 
-    const labelFontSizePx = 12; // базовый размер шрифта кружков
-    const showLabelsFromZoom = 16; // метки показываем, когда приближаемся
+    // Метки
+    const labelFontSizePx = 12;
+    const showLabelsFromZoom = 16; // показывать метки начиная с этого зума
+    const labelScaleMin = 0.5;
+    const labelScaleMax = 1.6;
+    const labelScaleFactor = 1.15; // чувствительность масштаба меток к zoom
+
     const metersPerDegLat = 111320;
     const kx = metersPerDegLat * Math.cos(transformCfg.targetCenter.lat * Math.PI / 180);
 
@@ -119,9 +125,9 @@
         const data = await resp.json();
         return data.features.map((f, idx) => {
             const rawId = Number(f.properties?.id ?? idx + 1);
-            const isService = serviceIds.has(rawId);
-            const id = isService ? rawId + serviceOffset : rawId;
             const realId = f.properties?.[realIdField] ?? null;
+            const isService = serviceIds.has(rawId) || realId === null || realId === undefined;
+            const id = isService ? rawId + serviceOffset : rawId;
             const coords = f.geometry.type === "Polygon"
                 ? f.geometry.coordinates[0]
                 : f.geometry.coordinates[0][0];
@@ -146,11 +152,12 @@
             ? `<a href="${parcel.link}" style="display:inline-flex;align-items:center;gap:8px;padding:10px 14px;background:#34A853;color:#fff;text-decoration:none;border-radius:8px;font-weight:600;">Забронировать</a>`
             : "";
         const visitLink = `<a href="${parcel.link}" style="color:#1a73e8;text-decoration:none;font-weight:600;">Перейти в карточку</a>`;
+        const displayId = parcel.realId ?? parcel.rawId;
 
         return `
             <div style="font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; min-width: 240px;">
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
-                    <div style="font-size:14px;color:#6b7280;">Участок №${parcel.rawId}</div>
+                    <div style="font-size:14px;color:#6b7280;">Участок №${displayId}</div>
                     <div style="padding:4px 8px;border-radius:12px;background:#f3f4f6;font-size:12px;color:#111827;">${statusLabels[parcel.status]}</div>
                 </div>
                 <div style="display:flex;gap:12px;align-items:center;margin-bottom:8px;">
@@ -166,21 +173,35 @@
         `;
     }
 
+    function makeLabelScale(currentZoom, baseZoom) {
+        const rawScale = Math.pow(labelScaleFactor, currentZoom - baseZoom);
+        return Math.max(labelScaleMin, Math.min(labelScaleMax, rawScale));
+    }
+
+    function makeLabelHtml(text, scale) {
+        return `<div style="
+            padding:0 6px;
+            color:rgba(55,65,81,0.8);
+            background:transparent;
+            font-weight:600;
+            font-size:${labelFontSizePx * scale}px;
+            line-height:1.2;
+            user-select:none;
+            transform: translate(-50%, -50%);
+            white-space: nowrap;
+        ">${text}</div>`;
+    }
+
     function addYandexLabels(map, parcels, baseZoom) {
         const labels = [];
-        const layout = ymaps.templateLayoutFactory.createClass(
-            `<div style="
-                padding:0 6px;
-                color:rgba(55,65,81,0.8);
-                background:transparent;
-                font-weight:600;
-                font-size:${labelFontSizePx}px;
-                line-height:1.2;
-                user-select:none;
-                transform: translate(-50%, -50%);
-                white-space: nowrap;
-            ">{{ properties.iconContent }}</div>`
-        );
+        let currentScale = makeLabelScale(map.getZoom(), baseZoom);
+        let layout = ymaps.templateLayoutFactory.createClass(makeLabelHtml("{{ properties.iconContent | raw }}", currentScale));
+
+        function rebuildLayout() {
+            currentScale = makeLabelScale(map.getZoom(), baseZoom);
+            layout = ymaps.templateLayoutFactory.createClass(makeLabelHtml("{{ properties.iconContent | raw }}", currentScale));
+            labels.forEach(l => l.options.set("iconLayout", layout));
+        }
 
         function updateVisibility() {
             const visible = map.getZoom() >= showLabelsFromZoom;
@@ -189,7 +210,7 @@
 
         parcels.filter(p => !p.isService).forEach(parcel => {
             const center = centroid(parcel.coords);
-            const label = new ymaps.Placemark(center, { iconContent: parcel.rawId }, {
+            const label = new ymaps.Placemark(center, { iconContent: parcel.realId ?? parcel.rawId }, {
                 iconLayout: layout,
                 draggable: false,
                 hasBalloon: false,
@@ -200,20 +221,26 @@
             map.geoObjects.add(label);
         });
 
-        map.events.add("boundschange", () => updateVisibility());
+        map.events.add("boundschange", (e) => {
+            if (e.get('newZoom') !== e.get('oldZoom')) {
+                rebuildLayout();
+                updateVisibility();
+            }
+        });
         updateVisibility();
     }
 
     function addLeafletLabels(map, parcels, baseZoom) {
         const group = L.layerGroup().addTo(map);
-        const makeIcon = (text) => L.divIcon({
+        const makeIcon = (text, scale) => L.divIcon({
             className: 'parcel-label',
-            html: `<div style="padding:0 6px;color:rgba(55,65,81,0.8);background:transparent;font-weight:600;font-size:${labelFontSizePx}px;line-height:1.2;transform:translate(-50%,-50%);white-space:nowrap;">${text}</div>`
+            html: makeLabelHtml(text, scale)
         });
 
         const markers = parcels.filter(p => !p.isService).map(parcel => {
             const [clat, clon] = centroid(parcel.coords);
-            const icon = makeIcon(parcel.rawId);
+            const scale = makeLabelScale(map.getZoom(), baseZoom);
+            const icon = makeIcon(parcel.realId ?? parcel.rawId, scale);
             return L.marker([clat, clon], { icon, interactive: false }).addTo(group);
         });
 
@@ -226,7 +253,21 @@
             }
         }
 
-        map.on('zoomend', updateVisibility);
+        function rescale() {
+            const scale = makeLabelScale(map.getZoom(), baseZoom);
+            const visible = map.getZoom() >= showLabelsFromZoom;
+            markers.forEach((m) => {
+                const text = m.options.icon.options.html.match(/>(.*)</s)?.[1] || "";
+                m.setIcon(makeIcon(text, scale));
+            });
+            if (visible && !map.hasLayer(group)) map.addLayer(group);
+            if (!visible && map.hasLayer(group)) map.removeLayer(group);
+        }
+
+        map.on('zoomend', () => {
+            rescale();
+        });
+
         updateVisibility();
     }
 
@@ -268,7 +309,7 @@
                 strokeWidth: 2
             });
 
-            polygon.properties.set("hintContent", `Участок ${parcel.rawId}: ${statusLabels[parcel.status]}`);
+            polygon.properties.set("hintContent", `Участок ${parcel.realId ?? parcel.rawId}: ${statusLabels[parcel.status]}`);
             polygon.events.add("click", () => openParcelBalloon(parcel, polygon, map, { id: null }));
             polygon.events.add("mouseenter", () => polygon.options.set("fillColor", colors[parcel.status].hover));
             polygon.events.add("mouseleave", () => polygon.options.set("fillColor", colors[parcel.status].base));
