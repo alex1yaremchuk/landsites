@@ -31,12 +31,11 @@
 <script src="https://api-maps.yandex.ru/2.1/?apikey=bb452fd0-002b-4c60-a321-d7ab9e326744&lang=ru_RU"></script>
 
 <script>
-    // Быстрая смена провайдера карты
+    // Переключатель карт
     const useLeaflet = false; // true = Leaflet, false = Yandex
 
     const sheetUrl = "https://docs.google.com/spreadsheets/d/e/2PACX-1vR3xNzYxN5m81iBLPw1DfO-ACg_bFrFRVKXj0MH0XhsKwfgeyhf-nQrkRMguWVASlhn_15amEGx6dgd/pub?gid=1663025527&single=true&output=csv";
-    // Исходный GeoJSON в локальных координатах (до привязки)
-    const geojsonUrl = "genplan_vega_polygons.geojson";
+    const geojsonUrl = "genplan_vega_polygons.geojson"; // локальные координаты
 
     const colors = {
         free: { base: "rgba(52, 168, 83, 0.35)", hover: "rgba(52, 168, 83, 0.6)" },
@@ -50,19 +49,32 @@
         sold: "Продан"
     };
 
-    // Аффинная трансформация локальных координат DXF -> WGS84 (по опорным точкам периметра)
+    const serviceIds = new Set([1, 2, 20, 24, 36, 60, 65, 94, 95]);
+    const serviceOffset = 1000;
+    const realIdField = "real_id"; // можно заполнять в properties реальными ID
+
+    // Трансформация (как у тебя — без изменений)
     const transformCfg = {
-        srcCenter: { x: 2225243.57545574, y: 425916.58015801 }, // центр локальной системы
-        angleRad: 0,          // без поворота
-        scaleX: 0.99,          // единый масштаб по осям
+        srcCenter: { x: 2225243.57545574, y: 425916.58015801 },
+        angleRad: 0,
+        scaleX: 0.99,
         scaleY: 0.99,
-        targetCenter: { lon: 38.09308485714286, lat: 55.37329485714286 }, // центр опорных точек
-        offsetX: -120, // метры, восток +
-        offsetY: -135  // метры, север +
+        targetCenter: { lon: 38.09308485714286, lat: 55.37329485714286 },
+        offsetX: -120,
+        offsetY: -135
     };
 
+    const labelFontSizePx = 12; // базовый размер шрифта кружков
+    const showLabelsFromZoom = 16; // метки показываем, когда приближаемся
     const metersPerDegLat = 111320;
     const kx = metersPerDegLat * Math.cos(transformCfg.targetCenter.lat * Math.PI / 180);
+
+    function centroid(coords) {
+        let x = 0, y = 0;
+        coords.forEach(p => { x += p[0]; y += p[1]; });
+        const len = coords.length || 1;
+        return [x / len, y / len];
+    }
 
     function applyTransform(x, y) {
         const { srcCenter, angleRad, scaleX, scaleY, targetCenter, offsetX, offsetY } = transformCfg;
@@ -106,18 +118,24 @@
         if (!resp.ok) throw new Error("GeoJSON not found");
         const data = await resp.json();
         return data.features.map((f, idx) => {
-            const id = Number(f.properties?.id ?? idx + 1);
+            const rawId = Number(f.properties?.id ?? idx + 1);
+            const isService = serviceIds.has(rawId);
+            const id = isService ? rawId + serviceOffset : rawId;
+            const realId = f.properties?.[realIdField] ?? null;
             const coords = f.geometry.type === "Polygon"
                 ? f.geometry.coordinates[0]
                 : f.geometry.coordinates[0][0];
             const latlon = coords.map(([x, y]) => applyTransform(x, y));
             return {
                 id,
+                rawId,
+                realId,
                 coords: latlon,
                 area: f.properties?.area ?? "—",
                 price: f.properties?.price ?? "—",
                 link: `/card/${id}`,
-                status: "free"
+                status: "free",
+                isService
             };
         });
     }
@@ -132,7 +150,7 @@
         return `
             <div style="font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; min-width: 240px;">
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
-                    <div style="font-size:14px;color:#6b7280;">Участок №${parcel.id}</div>
+                    <div style="font-size:14px;color:#6b7280;">Участок №${parcel.rawId}</div>
                     <div style="padding:4px 8px;border-radius:12px;background:#f3f4f6;font-size:12px;color:#111827;">${statusLabels[parcel.status]}</div>
                 </div>
                 <div style="display:flex;gap:12px;align-items:center;margin-bottom:8px;">
@@ -148,16 +166,68 @@
         `;
     }
 
-    function openParcelBalloon(parcel, polygon, mapInstance, openedState) {
-        const center = ymaps.util.bounds.getCenter(polygon.geometry.getBounds());
-        const isSame = openedState.id === parcel.id && mapInstance.balloon.isOpen();
-        if (isSame) {
-            mapInstance.balloon.close();
-            openedState.id = null;
-            return;
+    function addYandexLabels(map, parcels, baseZoom) {
+        const labels = [];
+        const layout = ymaps.templateLayoutFactory.createClass(
+            `<div style="
+                padding:0 6px;
+                color:rgba(55,65,81,0.8);
+                background:transparent;
+                font-weight:600;
+                font-size:${labelFontSizePx}px;
+                line-height:1.2;
+                user-select:none;
+                transform: translate(-50%, -50%);
+                white-space: nowrap;
+            ">{{ properties.iconContent }}</div>`
+        );
+
+        function updateVisibility() {
+            const visible = map.getZoom() >= showLabelsFromZoom;
+            labels.forEach(l => l.options.set("visible", visible));
         }
-        mapInstance.balloon.open(center, { contentBody: renderContent(parcel) });
-        openedState.id = parcel.id;
+
+        parcels.filter(p => !p.isService).forEach(parcel => {
+            const center = centroid(parcel.coords);
+            const label = new ymaps.Placemark(center, { iconContent: parcel.rawId }, {
+                iconLayout: layout,
+                draggable: false,
+                hasBalloon: false,
+                hasHint: false,
+                visible: false
+            });
+            labels.push(label);
+            map.geoObjects.add(label);
+        });
+
+        map.events.add("boundschange", () => updateVisibility());
+        updateVisibility();
+    }
+
+    function addLeafletLabels(map, parcels, baseZoom) {
+        const group = L.layerGroup().addTo(map);
+        const makeIcon = (text) => L.divIcon({
+            className: 'parcel-label',
+            html: `<div style="padding:0 6px;color:rgba(55,65,81,0.8);background:transparent;font-weight:600;font-size:${labelFontSizePx}px;line-height:1.2;transform:translate(-50%,-50%);white-space:nowrap;">${text}</div>`
+        });
+
+        const markers = parcels.filter(p => !p.isService).map(parcel => {
+            const [clat, clon] = centroid(parcel.coords);
+            const icon = makeIcon(parcel.rawId);
+            return L.marker([clat, clon], { icon, interactive: false }).addTo(group);
+        });
+
+        function updateVisibility() {
+            const visible = map.getZoom() >= showLabelsFromZoom;
+            if (visible) {
+                if (!map.hasLayer(group)) map.addLayer(group);
+            } else {
+                if (map.hasLayer(group)) map.removeLayer(group);
+            }
+        }
+
+        map.on('zoomend', updateVisibility);
+        updateVisibility();
     }
 
     async function initYandex() {
@@ -166,6 +236,8 @@
             zoom: 15,
             controls: ['zoomControl']
         });
+
+        const baseZoom = map.getZoom();
 
         const [statusMap, parcels] = await Promise.all([
             loadStatuses().catch(err => {
@@ -176,40 +248,35 @@
         ]);
 
         parcels.forEach(p => {
+            if (p.isService) return;
             if (statusMap.has(p.id)) {
                 p.status = statusMap.get(p.id);
             }
         });
 
-        const openedState = { id: null };
-        const allCoords = parcels.flatMap(p => p.coords);
+        const allCoords = parcels.filter(p => !p.isService).flatMap(p => p.coords);
         if (allCoords.length) {
             const lats = allCoords.map(c => c[0]);
             const lons = allCoords.map(c => c[1]);
             map.setBounds([[Math.min(...lats), Math.min(...lons)], [Math.max(...lats), Math.max(...lons)]], { checkZoomRange: true, duration: 0 });
         }
 
-        parcels.forEach(parcel => {
+        parcels.filter(p => !p.isService).forEach(parcel => {
             const polygon = new ymaps.Polygon([parcel.coords], { parcelId: parcel.id }, {
                 fillColor: colors[parcel.status].base,
                 strokeColor: "#4c566a",
                 strokeWidth: 2
             });
 
-            polygon.properties.set("hintContent", `Участок ${parcel.id}: ${statusLabels[parcel.status]}`);
-            polygon.events.add("click", () => openParcelBalloon(parcel, polygon, map, openedState));
+            polygon.properties.set("hintContent", `Участок ${parcel.rawId}: ${statusLabels[parcel.status]}`);
+            polygon.events.add("click", () => openParcelBalloon(parcel, polygon, map, { id: null }));
             polygon.events.add("mouseenter", () => polygon.options.set("fillColor", colors[parcel.status].hover));
             polygon.events.add("mouseleave", () => polygon.options.set("fillColor", colors[parcel.status].base));
 
             map.geoObjects.add(polygon);
         });
 
-        map.events.add("click", (e) => {
-            if (e.get("target") === map) {
-                map.balloon.close();
-                openedState.id = null;
-            }
-        });
+        addYandexLabels(map, parcels, baseZoom);
     }
 
     async function initLeaflet() {
@@ -227,6 +294,8 @@
             attribution: '&copy; OpenStreetMap'
         }).addTo(map);
 
+        const baseZoom = map.getZoom();
+
         const [statusMap, parcels] = await Promise.all([
             loadStatuses().catch(err => {
                 console.error("Не загрузили статусы", err);
@@ -236,19 +305,20 @@
         ]);
 
         parcels.forEach(p => {
+            if (p.isService) return;
             if (statusMap.has(p.id)) {
                 p.status = statusMap.get(p.id);
             }
         });
 
-        const allLatLng = parcels.flatMap(p => p.coords.map(([lat, lon]) => [lat, lon]));
+        const allLatLng = parcels.filter(p => !p.isService).flatMap(p => p.coords.map(([lat, lon]) => [lat, lon]));
         if (allLatLng.length) {
             const lats = allLatLng.map(c => c[0]);
             const lons = allLatLng.map(c => c[1]);
             map.fitBounds([[Math.min(...lats), Math.min(...lons)], [Math.max(...lats), Math.max(...lons)]], { padding: [20, 20] });
         }
 
-        parcels.forEach(parcel => {
+        parcels.filter(p => !p.isService).forEach(parcel => {
             const polygon = L.polygon(parcel.coords, {
                 color: "#4c566a",
                 weight: 2,
@@ -263,9 +333,10 @@
             polygon.on('mouseover', () => polygon.setStyle({ fillColor: colors[parcel.status].hover }));
             polygon.on('mouseout', () => polygon.setStyle({ fillColor: colors[parcel.status].base }));
         });
+
+        addLeafletLabels(map, parcels, baseZoom);
     }
 
-    // Выбор провайдера
     if (useLeaflet) {
         initLeaflet().catch(err => {
             console.error(err);
