@@ -11,11 +11,7 @@
             font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
             background: #0b1220;
         }
-        #map {
-            width: 100%;
-            height: 100vh;
-        }
-        /* Приглушаем подложку для Yandex */
+        #map { width: 100%; height: 100vh; }
         #map .ymaps-2-1-79-ground-pane {
             filter: grayscale(1) brightness(0.55) saturate(0.7);
         }
@@ -24,14 +20,11 @@
 <body>
 <div id="map"></div>
 
-<!-- Локальные Leaflet (без ключей) -->
 <link rel="stylesheet" href="./leaflet.css"/>
 <script src="./leaflet.js"></script>
-<!-- Yandex API (с ключом) -->
 <script src="https://api-maps.yandex.ru/2.1/?apikey=bb452fd0-002b-4c60-a321-d7ab9e326744&lang=ru_RU"></script>
 
 <script>
-    // Переключатель карт
     const useLeaflet = false; // true = Leaflet, false = Yandex
 
     const sheetUrl = "https://docs.google.com/spreadsheets/d/e/2PACX-1vR3xNzYxN5m81iBLPw1DfO-ACg_bFrFRVKXj0MH0XhsKwfgeyhf-nQrkRMguWVASlhn_15amEGx6dgd/pub?gid=1663025527&single=true&output=csv";
@@ -42,19 +35,13 @@
         reserved: { base: "rgba(120, 127, 138, 0.35)", hover: "rgba(120, 127, 138, 0.6)" },
         sold: { base: "rgba(128, 0, 32, 0.55)", hover: "rgba(128, 0, 32, 0.75)" }
     };
+    const statusLabels = { free: "Свободен", reserved: "Забронирован", sold: "Продан" };
 
-    const statusLabels = {
-        free: "Свободен",
-        reserved: "Забронирован",
-        sold: "Продан"
-    };
-
-    // Служебные: те, у которых real_id нет, либо в списке ниже
-    const serviceIds = new Set([1, 2, 20, 24, 36, 60, 65, 94, 95]);
+    const serviceIds = new Set([1, 2, 20, 24, 36, 60, 65, 94, 95]); // плюс все без real_id считаем служебными
     const serviceOffset = 1000;
     const realIdField = "real_id";
 
-    // Трансформация (не меняем)
+    // трансформация (не меняем)
     const transformCfg = {
         srcCenter: { x: 2225243.57545574, y: 425916.58015801 },
         angleRad: 0,
@@ -65,15 +52,16 @@
         offsetY: -135
     };
 
-    // Метки
     const labelFontSizePx = 12;
-    const showLabelsFromZoom = 16; // показывать метки начиная с этого зума
+    const showLabelsFromZoom = 16;
     const labelScaleMin = 0.5;
     const labelScaleMax = 1.6;
-    const labelScaleFactor = 1.15; // чувствительность масштаба меток к zoom
+    const labelScaleFactor = 1.15;
 
     const metersPerDegLat = 111320;
     const kx = metersPerDegLat * Math.cos(transformCfg.targetCenter.lat * Math.PI / 180);
+
+    const openedState = { id: null };
 
     function centroid(coords) {
         let x = 0, y = 0;
@@ -111,10 +99,10 @@
         const map = new Map();
         lines.forEach(row => {
             const [idRaw, statusRaw] = row.split(",");
-            const id = Number(idRaw);
+            const realId = Number(idRaw);
             const status = normalizeStatus(statusRaw);
-            if (!id || !status) return;
-            map.set(id, status);
+            if (!realId || !status) return;
+            map.set(realId, status); // таблица хранит real_id
         });
         return map;
     }
@@ -137,7 +125,7 @@
                 rawId,
                 realId,
                 coords: latlon,
-                area: f.properties?.area ?? "—",
+                area: f.properties?.area ?? 1,
                 price: f.properties?.price ?? "—",
                 link: `/card/${id}`,
                 status: "free",
@@ -147,28 +135,21 @@
     }
 
     function renderContent(parcel) {
+        const statusColors = { free: "#15803d", reserved: "#4b5563", sold: "#7f1d1d" };
         const hasBooking = parcel.status === "free";
         const bookingButton = hasBooking
-            ? `<a href="${parcel.link}" style="display:inline-flex;align-items:center;gap:8px;padding:10px 14px;background:#34A853;color:#fff;text-decoration:none;border-radius:8px;font-weight:600;">Забронировать</a>`
+            ? `<a href="${parcel.link}" style="display:inline-flex;align-items:center;gap:8px;padding:12px 16px;background:#34A853;color:#fff;text-decoration:none;border-radius:10px;font-weight:700;">Забронировать</a>`
             : "";
-        const visitLink = `<a href="${parcel.link}" style="color:#1a73e8;text-decoration:none;font-weight:600;">Перейти в карточку</a>`;
         const displayId = parcel.realId ?? parcel.rawId;
+        const statusText = statusLabels[parcel.status] ?? "";
+        const statusColor = statusColors[parcel.status] ?? "#111827";
 
         return `
-            <div style="font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; min-width: 240px;">
-                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
-                    <div style="font-size:14px;color:#6b7280;">Участок №${displayId}</div>
-                    <div style="padding:4px 8px;border-radius:12px;background:#f3f4f6;font-size:12px;color:#111827;">${statusLabels[parcel.status]}</div>
-                </div>
-                <div style="display:flex;gap:12px;align-items:center;margin-bottom:8px;">
-                    <div style="width:12px;height:12px;border-radius:999px;background:${colors[parcel.status].hover};box-shadow:0 0 0 3px rgba(0,0,0,0.06);"></div>
-                    <div style="font-size:15px;font-weight:600;color:#111827;">${parcel.price}</div>
-                    <div style="font-size:12px;color:#6b7280;">${parcel.area} сот.</div>
-                </div>
-                <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
-                    ${bookingButton}
-                    ${visitLink}
-                </div>
+            <div style="font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; ">
+                <div style="font-size:16px;font-weight:700;color:#111827;margin-bottom:10px;">Участок №${displayId}</div>
+                <div style="font-size:14px;color:#4b5563;margin-bottom:6px;">Площадь: ${parcel.area} м²</div>
+                <div style="font-size:14px;color:#4b5563;margin-bottom:12px;">Статус: <span style="color:${statusColor};font-weight:700;">${statusText}</span></div>
+                ${bookingButton}
             </div>
         `;
     }
@@ -194,12 +175,11 @@
 
     function addYandexLabels(map, parcels, baseZoom) {
         const labels = [];
-        let currentScale = makeLabelScale(map.getZoom(), baseZoom);
-        let layout = ymaps.templateLayoutFactory.createClass(makeLabelHtml("{{ properties.iconContent | raw }}", currentScale));
+        let layout = ymaps.templateLayoutFactory.createClass(makeLabelHtml("{{ properties.iconContent | raw }}", makeLabelScale(map.getZoom(), baseZoom)));
 
         function rebuildLayout() {
-            currentScale = makeLabelScale(map.getZoom(), baseZoom);
-            layout = ymaps.templateLayoutFactory.createClass(makeLabelHtml("{{ properties.iconContent | raw }}", currentScale));
+            const scale = makeLabelScale(map.getZoom(), baseZoom);
+            layout = ymaps.templateLayoutFactory.createClass(makeLabelHtml("{{ properties.iconContent | raw }}", scale));
             labels.forEach(l => l.options.set("iconLayout", layout));
         }
 
@@ -256,9 +236,9 @@
         function rescale() {
             const scale = makeLabelScale(map.getZoom(), baseZoom);
             const visible = map.getZoom() >= showLabelsFromZoom;
-            markers.forEach((m) => {
-                const text = m.options.icon.options.html.match(/>(.*)</s)?.[1] || "";
-                m.setIcon(makeIcon(text, scale));
+            markers.forEach((m, idx) => {
+                const parcel = parcels.filter(p => !p.isService)[idx];
+                m.setIcon(makeIcon(parcel.realId ?? parcel.rawId, scale));
             });
             if (visible && !map.hasLayer(group)) map.addLayer(group);
             if (!visible && map.hasLayer(group)) map.removeLayer(group);
@@ -269,6 +249,18 @@
         });
 
         updateVisibility();
+    }
+
+    function openParcelBalloon(parcel, polygon, mapInstance) {
+        const center = ymaps.util.bounds.getCenter(polygon.geometry.getBounds());
+        const isSame = openedState.id === parcel.id && mapInstance.balloon.isOpen();
+        if (isSame) {
+            mapInstance.balloon.close();
+            openedState.id = null;
+            return;
+        }
+        mapInstance.balloon.open(center, { contentBody: renderContent(parcel) });
+        openedState.id = parcel.id;
     }
 
     async function initYandex() {
@@ -290,8 +282,8 @@
 
         parcels.forEach(p => {
             if (p.isService) return;
-            if (statusMap.has(p.id)) {
-                p.status = statusMap.get(p.id);
+            if (p.realId && statusMap.has(p.realId)) {
+                p.status = statusMap.get(p.realId);
             }
         });
 
@@ -310,7 +302,7 @@
             });
 
             polygon.properties.set("hintContent", `Участок ${parcel.realId ?? parcel.rawId}: ${statusLabels[parcel.status]}`);
-            polygon.events.add("click", () => openParcelBalloon(parcel, polygon, map, { id: null }));
+            polygon.events.add("click", () => openParcelBalloon(parcel, polygon, map));
             polygon.events.add("mouseenter", () => polygon.options.set("fillColor", colors[parcel.status].hover));
             polygon.events.add("mouseleave", () => polygon.options.set("fillColor", colors[parcel.status].base));
 
@@ -347,8 +339,8 @@
 
         parcels.forEach(p => {
             if (p.isService) return;
-            if (statusMap.has(p.id)) {
-                p.status = statusMap.get(p.id);
+            if (p.realId && statusMap.has(p.realId)) {
+                p.status = statusMap.get(p.realId);
             }
         });
 
