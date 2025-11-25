@@ -37,9 +37,9 @@
     const geojsonUrl = "genplan_vega_polygons.geojson";
 
     const colors = {
-        free: { base: "rgba(52, 168, 83, 0.35)", hover: "rgba(52, 168, 83, 0.6)" },
-        reserved: { base: "rgba(120, 127, 138, 0.35)", hover: "rgba(120, 127, 138, 0.6)" },
-        sold: { base: "rgba(128, 0, 32, 0.55)", hover: "rgba(128, 0, 32, 0.75)" }
+        free: { base: "rgba(34, 197, 94, 0.6)", hover: "rgba(34, 197, 94, 0.8)" },
+        reserved: { base: "rgba(148, 163, 184, 0.55)", hover: "rgba(148, 163, 184, 0.75)" },
+        sold: { base: "rgba(185, 28, 28, 0.65)", hover: "rgba(185, 28, 28, 0.85)" }
     };
 
     const statusLabels = { free: "Свободен", reserved: "Забронирован", sold: "Продан" };
@@ -203,7 +203,7 @@
     }
 
     function renderContent(parcel) {
-        const statusColors = { free: "#15803d", reserved: "#4b5563", sold: "#7f1d1d" };
+        const statusColors = { free: "#16a34a", reserved: "#6b7280", sold: "#b91c1c" };
         const hasBooking = parcel.status === "free";
         const bookingButton = hasBooking
             ? `<a href="${parcel.link}" style="display:inline-flex;align-items:center;gap:8px;padding:12px 16px;background:#34A853;color:#fff;text-decoration:none;border-radius:10px;font-weight:700;">Забронировать</a>`
