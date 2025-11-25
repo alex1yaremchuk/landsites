@@ -37,9 +37,9 @@
     const geojsonUrl = "genplan_vega_polygons.geojson";
 
     const colors = {
-        free: { base: "rgba(34, 197, 94, 0.6)", hover: "rgba(34, 197, 94, 0.8)" },
-        reserved: { base: "rgba(148, 163, 184, 0.55)", hover: "rgba(148, 163, 184, 0.75)" },
-        sold: { base: "rgba(185, 28, 28, 0.65)", hover: "rgba(185, 28, 28, 0.85)" }
+        free: { base: "#309F48", hover: "#46bf5f" },
+        reserved: { base: "#94a3b8", hover: "#a5b1c4" },
+        sold: { base: "#7c0313", hover: "#a8081b" }
     };
 
     const statusLabels = { free: "Свободен", reserved: "Забронирован", sold: "Продан" };
@@ -203,10 +203,10 @@
     }
 
     function renderContent(parcel) {
-        const statusColors = { free: "#16a34a", reserved: "#6b7280", sold: "#b91c1c" };
+        const statusColors = { free: "#309F48", reserved: "#6b7280", sold: "#7c0313" };
         const hasBooking = parcel.status === "free";
         const bookingButton = hasBooking
-            ? `<a href="${parcel.link}" style="display:inline-flex;align-items:center;gap:8px;padding:12px 16px;background:#34A853;color:#fff;text-decoration:none;border-radius:10px;font-weight:700;">Забронировать</a>`
+            ? `<a href="${parcel.link}" style="display:inline-flex;align-items:center;gap:8px;padding:12px 16px;background:#309F48;color:#fff;text-decoration:none;border-radius:10px;font-weight:700;">Забронировать</a>`
             : "";
         const displayId = parcel.id ?? "—";
         const statusText = statusLabels[parcel.status] ?? "";
