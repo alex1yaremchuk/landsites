@@ -165,17 +165,23 @@
         return null;
     }
 
-    async function loadStatuses() {
+    async function loadSheetData() {
         const resp = await fetch(sheetUrl);
         const text = await resp.text();
         const lines = text.trim().split(/\r?\n/).slice(1);
         const map = new Map();
         lines.forEach(row => {
-            const [idRaw, statusRaw] = row.split(",");
+            const [idRaw, statusRaw, areaRaw, linkRaw] = row.split(",");
             const realId = Number(idRaw);
+            if (!realId) return;
             const status = normalizeStatus(statusRaw);
-            if (!realId || !status) return;
-            map.set(realId, status);
+            const area = Number(areaRaw);
+            const link = (linkRaw || "").trim();
+            map.set(realId, {
+                status,
+                area: Number.isFinite(area) ? area : null,
+                link: link || null
+            });
         });
         return map;
     }
@@ -346,7 +352,7 @@
         });
 
         const [statusMap, parcels] = await Promise.all([
-            loadStatuses().catch(err => {
+            loadSheetData().catch(err => {
                 console.error("Не загрузили статусы", err);
                 return new Map();
             }),
@@ -356,7 +362,10 @@
         parcels.forEach(p => {
             if (p.isService) return;
             if (p.id && statusMap.has(p.id)) {
-                p.status = statusMap.get(p.id);
+                const record = statusMap.get(p.id);
+                if (record.status) p.status = record.status;
+                if (record.area !== null) p.area = record.area;
+                if (record.link) p.link = record.link;
             }
         });
 
@@ -409,7 +418,7 @@
         }).addTo(map);
 
         const [statusMap, parcels] = await Promise.all([
-            loadStatuses().catch(err => {
+            loadSheetData().catch(err => {
                 console.error("Не загрузили статусы", err);
                 return new Map();
             }),
@@ -419,7 +428,10 @@
         parcels.forEach(p => {
             if (p.isService) return;
             if (p.id && statusMap.has(p.id)) {
-                p.status = statusMap.get(p.id);
+                const record = statusMap.get(p.id);
+                if (record.status) p.status = record.status;
+                if (record.area !== null) p.area = record.area;
+                if (record.link) p.link = record.link;
             }
         });
 
@@ -474,3 +486,5 @@
 </script>
 </body>
 </html>
+
+
