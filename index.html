@@ -48,9 +48,10 @@
     // служебные — все без id
     const labelFontSizePx = 12;
     const showLabelsFromZoom = 16;
-    const labelScaleMin = 0.5;
-    const labelScaleMax = 1.6;
-    const labelScaleFactor = 1.15;
+    const labelScaleMin = 0.8;
+    const labelScaleMax = 3;
+    const labelScaleFactor = 1.45;
+    const labelBaseScale = 1.15;
 
     // Трансформация (не трогаем)
     const transformCfg = {
@@ -223,8 +224,9 @@
         `;
     }
 
-    function makeLabelScale(currentZoom, baseZoom) {
-        const rawScale = Math.pow(labelScaleFactor, currentZoom - baseZoom);
+    function makeLabelScale(currentZoom) {
+        const deltaZoom = Math.max(0, currentZoom - showLabelsFromZoom);
+        const rawScale = labelBaseScale * Math.pow(labelScaleFactor, deltaZoom);
         return Math.max(labelScaleMin, Math.min(labelScaleMax, rawScale));
     }
 
@@ -232,7 +234,7 @@
         return `<div style="
             display:inline-block;
             padding:0 6px;
-            color:rgba(55,65,81,0.8);
+            color:#000;
             background:transparent;
             font-weight:600;
             font-size:${labelFontSizePx * scale}px;
@@ -243,12 +245,12 @@
         ">${text}</div>`;
     }
 
-    function addYandexLabels(map, parcels, baseZoom) {
+    function addYandexLabels(map, parcels) {
         const labels = [];
-        let layout = ymaps.templateLayoutFactory.createClass(makeLabelHtml("{{ properties.iconContent | raw }}", makeLabelScale(map.getZoom(), baseZoom)));
+        let layout = ymaps.templateLayoutFactory.createClass(makeLabelHtml("{{ properties.iconContent | raw }}", makeLabelScale(map.getZoom())));
 
         function rebuildLayout() {
-            const scale = makeLabelScale(map.getZoom(), baseZoom);
+            const scale = makeLabelScale(map.getZoom());
             layout = ymaps.templateLayoutFactory.createClass(makeLabelHtml("{{ properties.iconContent | raw }}", scale));
             labels.forEach(l => l.options.set("iconLayout", layout));
         }
@@ -280,7 +282,7 @@
         updateVisibility();
     }
 
-    function addLeafletLabels(map, parcels, baseZoom) {
+    function addLeafletLabels(map, parcels) {
         const labelGroup = L.layerGroup().addTo(map);
         const makeIcon = (text, scale) => L.divIcon({
             className: 'parcel-label',
@@ -289,7 +291,7 @@
 
         const markers = parcels.filter(p => !p.isService).map(parcel => {
             const [clat, clon] = labelPoint(parcel.coords);
-            const scale = makeLabelScale(map.getZoom(), baseZoom);
+            const scale = makeLabelScale(map.getZoom());
             const icon = makeIcon(parcel.id ?? "", scale);
             return L.marker([clat, clon], { icon, interactive: false }).addTo(labelGroup);
         });
@@ -304,7 +306,7 @@
         }
 
         function rescale() {
-            const scale = makeLabelScale(map.getZoom(), baseZoom);
+            const scale = makeLabelScale(map.getZoom());
             const visible = map.getZoom() >= showLabelsFromZoom;
             markers.forEach((m, idx) => {
                 const parcel = parcels.filter(p => !p.isService)[idx];
@@ -343,8 +345,6 @@
             controls: ['zoomControl']
         });
 
-        const baseZoom = map.getZoom();
-
         const [statusMap, parcels] = await Promise.all([
             loadStatuses().catch(err => {
                 console.error("Не загрузили статусы", err);
@@ -382,7 +382,7 @@
             map.geoObjects.add(polygon);
         });
 
-        addYandexLabels(map, parcels, baseZoom);
+        addYandexLabels(map, parcels);
 
         // закрываем балун при клике в пустоту
         map.events.add("click", (e) => {
@@ -407,8 +407,6 @@
             maxZoom: 19,
             attribution: '&copy; OpenStreetMap'
         }).addTo(map);
-
-        const baseZoom = map.getZoom();
 
         const [statusMap, parcels] = await Promise.all([
             loadStatuses().catch(err => {
@@ -448,7 +446,7 @@
             polygon.on('mouseout', () => polygon.setStyle({ fillColor: colors[parcel.status].base }));
         });
 
-        addLeafletLabels(map, parcels, baseZoom);
+        addLeafletLabels(map, parcels);
 
         // Закрываем попап при клике в пустую область карты
         map.on('click', () => {
