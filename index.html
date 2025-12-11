@@ -40,10 +40,16 @@
     const colors = {
         free: { base: "#309F48", hover: "#46bf5f" },
         reserved: { base: "#94a3b8", hover: "#a5b1c4" },
-        sold: { base: "#7c0313", hover: "#a8081b" }
+        sold: { base: "#7c0313", hover: "#a8081b" },
+        notForSale: { base: "#5b5b5b", hover: "#5b5b5b" }
     };
 
-    const statusLabels = { free: "Свободен", reserved: "Забронирован", sold: "Продан" };
+    const statusLabels = {
+        free: "Свободен",
+        reserved: "Забронирован",
+        sold: "Продан",
+        notForSale: "Нет в продаже"
+    };
 
     // служебные — все без id
     const labelFontSizePx = 12;
@@ -161,6 +167,7 @@
         if (!value) return null;
         if (value.includes("свобод")) return "free";
         if (value.includes("брон") || value.includes("резерв")) return "reserved";
+        if ((value.includes("нет") && value.includes("прод")) || value.includes("не прода")) return "notForSale";
         if (value.includes("прод")) return "sold";
         return null;
     }
@@ -211,7 +218,12 @@
     }
 
     function renderContent(parcel) {
-        const statusColors = { free: "#309F48", reserved: "#6b7280", sold: "#7c0313" };
+        const statusColors = {
+            free: "#309F48",
+            reserved: "#6b7280",
+            sold: "#7c0313",
+            notForSale: "#5b5b5b"
+        };
         const hasBooking = parcel.status === "free";
         const bookingButton = hasBooking
             ? `<a href="${parcel.link}" style="display:inline-flex;align-items:center;gap:8px;padding:12px 16px;background:#309F48;color:#fff;text-decoration:none;border-radius:10px;font-weight:700;">Забронировать</a>`
