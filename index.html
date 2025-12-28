@@ -19,6 +19,15 @@
         #map .ymaps-2-1-79-ground-pane {
             filter: grayscale(1) brightness(0.55) saturate(0.7);
         }
+        /* нижние лейблы Yandex Maps */
+        #map .ymaps-2-1-79-map-copyrights-promo,
+        #map .ymaps-2-1-79-gotoymaps,
+        #map .ymaps-2-1-79-gototech {
+            display: none !important;
+        }
+        #map .ymaps-2-1-79-copyright {
+            display: none !important;
+        }
     </style>
 </head>
 <body>
@@ -357,11 +366,17 @@
     }
 
     async function initYandex() {
+        const minZoom = 9;
+        const maxZoom = 18;
         const map = new ymaps.Map("map", {
             center: [transformCfg.targetCenter.lat, transformCfg.targetCenter.lon],
             zoom: 15,
             controls: ['zoomControl']
+        }, {
+            suppressMapOpenBlock: true
         });
+        map.options.set({ minZoom, maxZoom });
+        map.behaviors.disable('scrollZoom');
 
         const [statusMap, parcels] = await Promise.all([
             loadSheetData().catch(err => {
@@ -386,6 +401,8 @@
             const lats = allCoords.map(c => c[0]);
             const lons = allCoords.map(c => c[1]);
             map.setBounds([[Math.min(...lats), Math.min(...lons)], [Math.max(...lats), Math.max(...lons)]], { checkZoomRange: true, duration: 0 });
+            const clampedZoom = Math.min(maxZoom, Math.max(minZoom, map.getZoom()));
+            if (clampedZoom !== map.getZoom()) map.setZoom(clampedZoom, { duration: 0 });
         }
 
         parcels.filter(p => !p.isService).forEach(parcel => {
@@ -422,7 +439,10 @@
         const map = L.map('map', {
             center: [transformCfg.targetCenter.lat, transformCfg.targetCenter.lon],
             zoom: 15,
-            zoomControl: true
+            minZoom: 12,
+            maxZoom: 17,
+            zoomControl: true,
+            scrollWheelZoom: false
         });
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
             maxZoom: 19,
