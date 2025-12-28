@@ -44,6 +44,7 @@
 
     // const sheetUrl = "https://docs.google.com/spreadsheets/d/e/2PACX-1vR3xNzYxN5m81iBLPw1DfO-ACg_bFrFRVKXj0MH0XhsKwfgeyhf-nQrkRMguWVASlhn_15amEGx6dgd/pub?gid=1663025527&single=true&output=csv";
     const sheetUrl = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTDCVOAVkW1FjlIOSZVE2XDNLK5ga1NMktiy40vyMPiRi8BDz72EyBYVXe-ve1fk9T5ffa6veTLle5Y/pub?gid=706240354&single=true&output=csv";
+    const sheetCacheKey = "landsites.sheetCache.v1";
     const geojsonUrl = "genplan_vega_polygons.geojson";
 
     const colors = {
@@ -82,6 +83,7 @@
     const metersPerDegLat = 111320;
     const kx = metersPerDegLat * Math.cos(transformCfg.targetCenter.lat * Math.PI / 180);
     const openedState = { id: null };
+    const sheetRefreshState = { inFlight: false };
 
     // polylabel (Mapbox) — поиск точки, максимально удаленной от краев полигона
     function polylabel(polygon, precision = 1.0) {
@@ -181,25 +183,172 @@
         return null;
     }
 
-    async function loadSheetData() {
-        const resp = await fetch(sheetUrl);
-        const text = await resp.text();
-        const lines = text.trim().split(/\r?\n/).slice(1);
+    function parseSheetDate(text) {
+        const value = (text || "").trim();
+        if (!value) return null;
+        const match = value.match(/^(\d{2})\.(\d{2})\.(\d{4})\s+(\d{2}):(\d{2}):(\d{2})$/);
+        if (!match) return null;
+        const [, dd, mm, yyyy, hh, min, ss] = match;
+        const date = new Date(Number(yyyy), Number(mm) - 1, Number(dd), Number(hh), Number(min), Number(ss));
+        const ts = date.getTime();
+        return Number.isFinite(ts) ? ts : null;
+    }
+
+    function parseSheetText(text) {
+        const trimmed = (text || "").trim();
+        if (!trimmed) return { map: new Map(), maxUpdatedTs: null };
+        const lines = trimmed.split(/\r?\n/);
+        const rows = lines.slice(1);
         const map = new Map();
-        lines.forEach(row => {
-            const [idRaw, statusRaw, areaRaw, linkRaw] = row.split(",");
+        let maxUpdatedTs = null;
+        rows.forEach(row => {
+            const [idRaw, statusRaw, areaRaw, linkRaw, updatedRaw] = row.split(",");
             const realId = Number(idRaw);
             if (!realId) return;
             const status = normalizeStatus(statusRaw);
             const area = Number(areaRaw);
             const link = (linkRaw || "").trim();
+            const updatedTs = parseSheetDate(updatedRaw);
+            if (updatedTs !== null) {
+                if (maxUpdatedTs === null || updatedTs > maxUpdatedTs) maxUpdatedTs = updatedTs;
+            }
             map.set(realId, {
                 status,
                 area: Number.isFinite(area) ? area : null,
                 link: link || null
             });
         });
-        return map;
+        // console.log("[sheet] parsed rows:", rows.length, "maxUpdatedTs:", formatTs(maxUpdatedTs));
+        return { map, maxUpdatedTs };
+    }
+
+    function readCachedSheet() {
+        try {
+            const raw = localStorage.getItem(sheetCacheKey);
+            if (!raw) return null;
+            const parsed = JSON.parse(raw);
+            if (!parsed || !Array.isArray(parsed.rows)) return null;
+            const map = new Map();
+            parsed.rows.forEach(r => {
+                if (!r || !r.id) return;
+                map.set(Number(r.id), {
+                    status: r.status ?? null,
+                    area: Number.isFinite(r.area) ? r.area : null,
+                    link: r.link ?? null
+                });
+            });
+            return { map, maxUpdatedTs: parsed.maxUpdatedTs ?? null };
+        } catch (err) {
+            return null;
+        }
+    }
+
+    function writeCachedSheet(result) {
+        try {
+            const rows = [];
+            result.map.forEach((v, id) => {
+                rows.push({
+                    id,
+                    status: v.status ?? null,
+                    area: v.area ?? null,
+                    link: v.link ?? null
+                });
+            });
+            localStorage.setItem(sheetCacheKey, JSON.stringify({
+                maxUpdatedTs: result.maxUpdatedTs ?? null,
+                rows
+            }));
+        } catch (err) {
+        }
+    }
+
+    function chooseSheetData(fetched, cached) {
+        if (fetched && !cached) return fetched;
+        if (!fetched && cached) return cached;
+        if (!fetched && !cached) return { map: new Map(), maxUpdatedTs: null };
+        const fetchedTs = fetched.maxUpdatedTs;
+        const cachedTs = cached.maxUpdatedTs;
+        if (fetchedTs === null && cachedTs === null) return fetched;
+        if (fetchedTs === null && cachedTs !== null) return cached;
+        if (fetchedTs !== null && cachedTs === null) return fetched;
+        const chosen = fetchedTs >= cachedTs ? "fetched" : "cached";
+        // console.log("[sheet] choose:", chosen, "fetchedTs:", formatTs(fetchedTs), "cachedTs:", formatTs(cachedTs));
+        return fetchedTs >= cachedTs ? fetched : cached;
+    }
+
+    async function loadSheetData() {
+        const cached = readCachedSheet();
+        // console.log("[sheet] cached:", cached ? "yes" : "no", "cachedTs:", formatTs(cached?.maxUpdatedTs ?? null));
+        let fetched = null;
+        try {
+            const cacheBust = (sheetUrl.includes("?") ? "&" : "?") + "cb=" + Date.now();
+            const resp = await fetch(sheetUrl + cacheBust, { cache: "no-store" });
+            const text = await resp.text();
+            fetched = parseSheetText(text);
+            // console.log("[sheet] fetched ok:", sheetUrl, "rows:", fetched.map.size, "maxUpdatedTs:", formatTs(fetched.maxUpdatedTs));
+        } catch (err) {
+            fetched = null;
+            // console.warn("[sheet] fetch failed:", err);
+        }
+        const chosen = chooseSheetData(fetched, cached);
+        if (chosen === fetched) writeCachedSheet(fetched);
+        // console.log("[sheet] chosen:", chosen === fetched ? "fetched" : "cached", "finalTs:", formatTs(chosen.maxUpdatedTs));
+        return chosen;
+    }
+
+    function formatTs(ts) {
+        if (ts === null || ts === undefined) return null;
+        const date = new Date(ts);
+        if (Number.isNaN(date.getTime())) return ts;
+        const pad = (n) => String(n).padStart(2, "0");
+        return `${pad(date.getDate())}.${pad(date.getMonth() + 1)}.${date.getFullYear()} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+    }
+
+    function applyStatusMapToParcels(statusMap, parcels) {
+        let changed = false;
+        parcels.forEach(p => {
+            if (p.isService || !p.id) return;
+            if (!statusMap.has(p.id)) return;
+            const record = statusMap.get(p.id);
+            const nextStatus = record.status ?? p.status;
+            const nextArea = record.area ?? p.area;
+            const nextLink = record.link ?? p.link;
+            if (nextStatus !== p.status || nextArea !== p.area || nextLink !== p.link) {
+                p.status = nextStatus;
+                p.area = nextArea;
+                p.link = nextLink;
+                changed = true;
+            }
+        });
+        return changed;
+    }
+
+    function refreshYandexPolygons(parcels, polygonById, mapInstance) {
+        parcels.forEach(parcel => {
+            if (parcel.isService || !parcel.id) return;
+            const polygon = polygonById.get(parcel.id);
+            if (!polygon) return;
+            const palette = colors[parcel.status] ?? colors.free;
+            polygon.options.set("fillColor", palette.base);
+            polygon.properties.set("hintContent", `??????? ${parcel.id}: ${statusLabels[parcel.status]}`);
+            if (openedState.id === parcel.id && mapInstance.balloon.isOpen()) {
+                const center = ymaps.util.bounds.getCenter(polygon.geometry.getBounds());
+                mapInstance.balloon.open(center, { contentBody: renderContent(parcel) });
+            }
+        });
+    }
+
+    function refreshLeafletPolygons(parcels, polygonById) {
+        parcels.forEach(parcel => {
+            if (parcel.isService || !parcel.id) return;
+            const polygon = polygonById.get(parcel.id);
+            if (!polygon) return;
+            const palette = colors[parcel.status] ?? colors.free;
+            polygon.setStyle({ fillColor: palette.base });
+            if (polygon.getPopup()) {
+                polygon.setPopupContent(renderContent(parcel));
+            }
+        });
     }
 
     async function loadParcelsGeoJSON() {
@@ -287,6 +436,7 @@
             labels.forEach(l => l.options.set("visible", visible));
         }
 
+        const polygonById = new Map();
         parcels.filter(p => !p.isService).forEach(parcel => {
             const center = labelPoint(parcel.coords);
             const label = new ymaps.Placemark(center, { iconContent: parcel.id ?? "" }, {
@@ -378,23 +528,16 @@
         map.options.set({ minZoom, maxZoom });
         map.behaviors.disable('scrollZoom');
 
-        const [statusMap, parcels] = await Promise.all([
+        const [statusResult, parcels] = await Promise.all([
             loadSheetData().catch(err => {
                 console.error("Не загрузили статусы", err);
-                return new Map();
+                return { map: new Map(), maxUpdatedTs: null };
             }),
             loadParcelsGeoJSON()
         ]);
 
-        parcels.forEach(p => {
-            if (p.isService) return;
-            if (p.id && statusMap.has(p.id)) {
-                const record = statusMap.get(p.id);
-                if (record.status) p.status = record.status;
-                if (record.area !== null) p.area = record.area;
-                if (record.link) p.link = record.link;
-            }
-        });
+        const statusMap = statusResult.map;
+        applyStatusMapToParcels(statusMap, parcels);
 
         const allCoords = parcels.filter(p => !p.isService).flatMap(p => p.coords);
         if (allCoords.length) {
@@ -405,6 +548,7 @@
             if (clampedZoom !== map.getZoom()) map.setZoom(clampedZoom, { duration: 0 });
         }
 
+        const polygonById = new Map();
         parcels.filter(p => !p.isService).forEach(parcel => {
             const polygon = new ymaps.Polygon([parcel.coords], { parcelId: parcel.id }, {
                 fillColor: colors[parcel.status].base,
@@ -418,9 +562,22 @@
             polygon.events.add("mouseleave", () => polygon.options.set("fillColor", colors[parcel.status].base));
 
             map.geoObjects.add(polygon);
+            if (parcel.id) polygonById.set(parcel.id, polygon);
         });
 
         addYandexLabels(map, parcels);
+
+        setInterval(async () => {
+            if (sheetRefreshState.inFlight) return;
+            sheetRefreshState.inFlight = true;
+            try {
+                const result = await loadSheetData();
+                const changed = applyStatusMapToParcels(result.map, parcels);
+                if (changed) refreshYandexPolygons(parcels, polygonById, map);
+            } finally {
+                sheetRefreshState.inFlight = false;
+            }
+        }, 20000);
 
         // закрываем балун при клике в пустоту
         map.events.add("click", (e) => {
@@ -449,23 +606,16 @@
             attribution: '&copy; OpenStreetMap'
         }).addTo(map);
 
-        const [statusMap, parcels] = await Promise.all([
+        const [statusResult, parcels] = await Promise.all([
             loadSheetData().catch(err => {
                 console.error("Не загрузили статусы", err);
-                return new Map();
+                return { map: new Map(), maxUpdatedTs: null };
             }),
             loadParcelsGeoJSON()
         ]);
 
-        parcels.forEach(p => {
-            if (p.isService) return;
-            if (p.id && statusMap.has(p.id)) {
-                const record = statusMap.get(p.id);
-                if (record.status) p.status = record.status;
-                if (record.area !== null) p.area = record.area;
-                if (record.link) p.link = record.link;
-            }
-        });
+        const statusMap = statusResult.map;
+        applyStatusMapToParcels(statusMap, parcels);
 
         const allLatLng = parcels.filter(p => !p.isService).flatMap(p => p.coords.map(([lat, lon]) => [lat, lon]));
         if (allLatLng.length) {
@@ -474,6 +624,7 @@
             map.fitBounds([[Math.min(...lats), Math.min(...lons)], [Math.max(...lats), Math.max(...lons)]], { padding: [20, 20] });
         }
 
+        const polygonById = new Map();
         parcels.filter(p => !p.isService).forEach(parcel => {
             const polygon = L.polygon(parcel.coords, {
                 color: "#4c566a",
@@ -488,9 +639,22 @@
             });
             polygon.on('mouseover', () => polygon.setStyle({ fillColor: colors[parcel.status].hover }));
             polygon.on('mouseout', () => polygon.setStyle({ fillColor: colors[parcel.status].base }));
+            if (parcel.id) polygonById.set(parcel.id, polygon);
         });
 
         addLeafletLabels(map, parcels);
+
+        setInterval(async () => {
+            if (sheetRefreshState.inFlight) return;
+            sheetRefreshState.inFlight = true;
+            try {
+                const result = await loadSheetData();
+                const changed = applyStatusMapToParcels(result.map, parcels);
+                if (changed) refreshLeafletPolygons(parcels, polygonById);
+            } finally {
+                sheetRefreshState.inFlight = false;
+            }
+        }, 20000);
 
         // Закрываем попап при клике в пустую область карты
         map.on('click', () => {
