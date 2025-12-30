@@ -65,7 +65,7 @@
     // служебные — все без id
     const labelFontSizePx = 12;
     const showLabelsFromZoom = 15;
-    const labelScaleMin = 0.8;
+    const labelScaleMin = 0.5;
     const labelScaleMax = 3;
     const labelScaleFactor = 1.45;
     const labelBaseScale = 1.15;
@@ -403,7 +403,7 @@
 
     function makeLabelScale(currentZoom) {
         const deltaZoom = Math.max(0, currentZoom - showLabelsFromZoom);
-        const baseScale = (deltaZoom === 0) ? (labelBaseScale * 0.5) : labelBaseScale;
+        const baseScale = (deltaZoom < 1) ? (labelBaseScale * .6) : labelBaseScale;
         const rawScale = baseScale * Math.pow(labelScaleFactor, deltaZoom);
         return Math.max(labelScaleMin, Math.min(labelScaleMax, rawScale));
     }
