@@ -17,16 +17,16 @@
             height: 100vh;
         }
         /* Приглушаем подложку для Yandex */
-        #map .ymaps-2-1-79-ground-pane {
+        #map [class*="ymaps-"][class*="-ground-pane"] {
             filter: grayscale(1) brightness(0.55) saturate(0.7);
         }
         /* нижние лейблы Yandex Maps */
-        #map .ymaps-2-1-79-map-copyrights-promo,
-        #map .ymaps-2-1-79-gotoymaps,
-        #map .ymaps-2-1-79-gototech {
+        #map [class*="ymaps-"][class*="-map-copyrights-promo"],
+        #map [class*="ymaps-"][class*="-gotoymaps"],
+        #map [class*="ymaps-"][class*="-gototech"] {
             display: none !important;
         }
-        #map .ymaps-2-1-79-copyright {
+        #map [class*="ymaps-"][class*="-copyright"] {
             display: none !important;
         }
     </style>
