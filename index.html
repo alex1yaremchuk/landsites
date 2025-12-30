@@ -64,11 +64,14 @@
 
     // служебные — все без id
     const labelFontSizePx = 12;
-    const showLabelsFromZoom = 15;
-    const labelScaleMin = 0.5;
-    const labelScaleMax = 3;
-    const labelScaleFactor = 1.45;
-    const labelBaseScale = 1.15;
+    const showLabelsFromZoom = 14;
+    const labelFontPxByZoom = [
+        { zoom: 14, size: 5 },
+        { zoom: 15, size: 8 },
+        { zoom: 16, size: 10 },
+        { zoom: 17, size: 12 },
+        { zoom: 18, size: 14 }
+    ];
 
     // Трансформация (не трогаем)
     const transformCfg = {
@@ -401,16 +404,28 @@
         `;
     }
 
-    function makeLabelScale(currentZoom) {
-        const deltaZoom = Math.max(0, currentZoom - showLabelsFromZoom);
-        const baseScale = (deltaZoom < 1) ? (labelBaseScale * .6) : labelBaseScale;
-        const rawScale = baseScale * Math.pow(labelScaleFactor, deltaZoom);
-        return Math.max(labelScaleMin, Math.min(labelScaleMax, rawScale));
+    function makeLabelFontPx(currentZoom) {
+        if (!Number.isFinite(currentZoom)) return labelFontSizePx;
+        const points = labelFontPxByZoom;
+        let low = points[0];
+        let high = points[points.length - 1];
+        for (let i = 0; i < points.length; i++) {
+            const point = points[i];
+            if (currentZoom <= point.zoom) {
+                high = point;
+                break;
+            }
+            low = point;
+        }
+        if (currentZoom <= low.zoom) return low.size;
+        if (currentZoom >= high.zoom) return high.size;
+        const t = (currentZoom - low.zoom) / (high.zoom - low.zoom);
+        return low.size + (high.size - low.size) * t;
     }
 
-    // Fix zoom-15 alignment: zero line-height wrapper avoids baseline offset at tiny font sizes.
-    function makeLabelHtml(text, scale) {
-        const fontSizePx = Math.max(1, Math.round(labelFontSizePx * scale));
+    // Fix low-zoom alignment: zero line-height wrapper avoids baseline offset at tiny font sizes.
+    function makeLabelHtml(text, fontSize) {
+        const fontSizePx = Math.max(1, Math.round(fontSize));
         const lineHeightPx = fontSizePx;
         return `<div style="
             display:block;
@@ -436,11 +451,11 @@
     }
     function addYandexLabels(map, parcels) {
         const labels = [];
-        let layout = ymaps.templateLayoutFactory.createClass(makeLabelHtml("{{ properties.iconContent | raw }}", makeLabelScale(map.getZoom())));
+        let layout = ymaps.templateLayoutFactory.createClass(makeLabelHtml("{{ properties.iconContent | raw }}", makeLabelFontPx(map.getZoom())));
 
         function rebuildLayout() {
-            const scale = makeLabelScale(map.getZoom());
-            layout = ymaps.templateLayoutFactory.createClass(makeLabelHtml("{{ properties.iconContent | raw }}", scale));
+            const fontSizePx = makeLabelFontPx(map.getZoom());
+            layout = ymaps.templateLayoutFactory.createClass(makeLabelHtml("{{ properties.iconContent | raw }}", fontSizePx));
             labels.forEach(l => l.options.set("iconLayout", layout));
         }
 
@@ -474,15 +489,15 @@
 
     function addLeafletLabels(map, parcels) {
         const labelGroup = L.layerGroup().addTo(map);
-        const makeIcon = (text, scale) => L.divIcon({
+        const makeIcon = (text, fontSizePx) => L.divIcon({
             className: 'parcel-label',
-            html: makeLabelHtml(text, scale)
+            html: makeLabelHtml(text, fontSizePx)
         });
 
         const markers = parcels.filter(p => !p.isService).map(parcel => {
             const [clat, clon] = labelPoint(parcel.coords);
-            const scale = makeLabelScale(map.getZoom());
-            const icon = makeIcon(parcel.id ?? "", scale);
+            const fontSizePx = makeLabelFontPx(map.getZoom());
+            const icon = makeIcon(parcel.id ?? "", fontSizePx);
             return L.marker([clat, clon], { icon, interactive: false }).addTo(labelGroup);
         });
 
@@ -496,11 +511,11 @@
         }
 
         function rescale() {
-            const scale = makeLabelScale(map.getZoom());
+            const fontSizePx = makeLabelFontPx(map.getZoom());
             const visible = map.getZoom() >= showLabelsFromZoom;
             markers.forEach((m, idx) => {
                 const parcel = parcels.filter(p => !p.isService)[idx];
-                m.setIcon(makeIcon(parcel.id ?? "", scale));
+                m.setIcon(makeIcon(parcel.id ?? "", fontSizePx));
             });
             if (visible) {
                 if (!map.hasLayer(labelGroup)) map.addLayer(labelGroup);
