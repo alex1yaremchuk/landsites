@@ -403,7 +403,7 @@
 
     function makeLabelScale(currentZoom) {
         const deltaZoom = Math.max(0, currentZoom - showLabelsFromZoom);
-        const baseScale = (deltaZoom === 0) ? (labelBaseScale * 0.6) : labelBaseScale;
+        const baseScale = (deltaZoom === 0) ? (labelBaseScale * 0.5) : labelBaseScale;
         const rawScale = baseScale * Math.pow(labelScaleFactor, deltaZoom);
         return Math.max(labelScaleMin, Math.min(labelScaleMax, rawScale));
     }
