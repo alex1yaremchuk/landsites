@@ -2,6 +2,7 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Земельные участки</title>
     <style>
         html, body {
@@ -63,7 +64,7 @@
 
     // служебные — все без id
     const labelFontSizePx = 12;
-    const showLabelsFromZoom = 16;
+    const showLabelsFromZoom = 15;
     const labelScaleMin = 0.8;
     const labelScaleMax = 3;
     const labelScaleFactor = 1.45;
@@ -402,25 +403,37 @@
 
     function makeLabelScale(currentZoom) {
         const deltaZoom = Math.max(0, currentZoom - showLabelsFromZoom);
-        const rawScale = labelBaseScale * Math.pow(labelScaleFactor, deltaZoom);
+        const baseScale = (deltaZoom === 0) ? (labelBaseScale * 0.6) : labelBaseScale;
+        const rawScale = baseScale * Math.pow(labelScaleFactor, deltaZoom);
         return Math.max(labelScaleMin, Math.min(labelScaleMax, rawScale));
     }
 
+    // Fix zoom-15 alignment: zero line-height wrapper avoids baseline offset at tiny font sizes.
     function makeLabelHtml(text, scale) {
+        const fontSizePx = Math.max(1, Math.round(labelFontSizePx * scale));
+        const lineHeightPx = fontSizePx;
         return `<div style="
-            display:inline-block;
+            display:block;
+            font-size:0;
+            line-height:0;
+            margin:0;
+            padding:0;
+        "><span style="
+            display:inline-flex;
+            align-items:center;
+            justify-content:center;
+            height:${lineHeightPx}px;
             padding:0 6px;
             color:#000;
             background:transparent;
             font-weight:600;
-            font-size:${labelFontSizePx * scale}px;
-            line-height:1.2;
+            font-size:${fontSizePx}px;
+            line-height:${lineHeightPx}px;
             user-select:none;
             transform: translate(-50%, -50%);
             white-space: nowrap;
-        ">${text}</div>`;
+        ">${text}</span></div>`;
     }
-
     function addYandexLabels(map, parcels) {
         const labels = [];
         let layout = ymaps.templateLayoutFactory.createClass(makeLabelHtml("{{ properties.iconContent | raw }}", makeLabelScale(map.getZoom())));
