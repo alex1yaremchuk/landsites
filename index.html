@@ -553,6 +553,8 @@
         }, {
             suppressMapOpenBlock: true
         });
+        const zoomControl = map.controls.get('zoomControl');
+        if (zoomControl) zoomControl.options.set('position', { right: 10, top: 120 });
         map.options.set({ minZoom, maxZoom });
         map.behaviors.disable('scrollZoom');
 
@@ -629,6 +631,7 @@
             zoomControl: true,
             scrollWheelZoom: false
         });
+        if (map.zoomControl) map.zoomControl.setPosition('topright');
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
             maxZoom: 19,
             attribution: '&copy; OpenStreetMap'
