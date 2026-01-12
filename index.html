@@ -42,6 +42,7 @@
 
 <script>
     const useLeaflet = false; // true = Leaflet, false = Yandex
+    const showServicePolygons = true; // временно показать технические полигоны
 
     // const sheetUrl = "https://docs.google.com/spreadsheets/d/e/2PACX-1vR3xNzYxN5m81iBLPw1DfO-ACg_bFrFRVKXj0MH0XhsKwfgeyhf-nQrkRMguWVASlhn_15amEGx6dgd/pub?gid=1663025527&single=true&output=csv";
     const sheetUrl = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTDCVOAVkW1FjlIOSZVE2XDNLK5ga1NMktiy40vyMPiRi8BDz72EyBYVXe-ve1fk9T5ffa6veTLle5Y/pub?gid=706240354&single=true&output=csv";
@@ -60,6 +61,21 @@
         reserved: "Забронирован",
         sold: "Продан",
         notForSale: "Нет в продаже"
+    };
+    const servicePolygonActiveStrokeColor = "#ef4444";
+    const servicePolygonStyle = {
+        fillColor: "#fbbf24",
+        fillOpacity: 0.2,
+        strokeColor: "#d97706",
+        strokeWidth: 2,
+        strokeStyle: "shortdash"
+    };
+    const servicePolygonStyleLeaflet = {
+        color: "#d97706",
+        weight: 2,
+        fillColor: "#fbbf24",
+        fillOpacity: 0.2,
+        dashArray: "4 6"
     };
 
     // служебные — все без id
@@ -578,6 +594,20 @@
             if (clampedZoom !== map.getZoom()) map.setZoom(clampedZoom, { duration: 0 });
         }
 
+        if (showServicePolygons) {
+            const servicePolygons = [];
+            parcels.filter(p => p.isService).forEach((parcel, idx) => {
+                const polygon = new ymaps.Polygon([parcel.coords], { serviceId: idx }, servicePolygonStyle);
+                polygon.properties.set("hintContent", "Технический полигон");
+                polygon.events.add("click", () => {
+                    servicePolygons.forEach(p => p.options.set("strokeColor", servicePolygonStyle.strokeColor));
+                    polygon.options.set("strokeColor", servicePolygonActiveStrokeColor);
+                });
+                map.geoObjects.add(polygon);
+                servicePolygons.push(polygon);
+            });
+        }
+
         const polygonById = new Map();
         parcels.filter(p => !p.isService).forEach(parcel => {
             const polygon = new ymaps.Polygon([parcel.coords], { parcelId: parcel.id }, {
@@ -653,6 +683,18 @@
             const lats = allLatLng.map(c => c[0]);
             const lons = allLatLng.map(c => c[1]);
             map.fitBounds([[Math.min(...lats), Math.min(...lons)], [Math.max(...lats), Math.max(...lons)]], { padding: [20, 20] });
+        }
+
+        if (showServicePolygons) {
+            const servicePolygons = [];
+            parcels.filter(p => p.isService).forEach(parcel => {
+                const polygon = L.polygon(parcel.coords, servicePolygonStyleLeaflet).addTo(map);
+                polygon.on("click", () => {
+                    servicePolygons.forEach(p => p.setStyle({ color: servicePolygonStyleLeaflet.color }));
+                    polygon.setStyle({ color: servicePolygonActiveStrokeColor });
+                });
+                servicePolygons.push(polygon);
+            });
         }
 
         const polygonById = new Map();
