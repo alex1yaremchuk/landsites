@@ -51,8 +51,8 @@
     const colors = {
         free: { base: "#309F48", hover: "#46bf5f" },
         reserved: { base: "#94a3b8", hover: "#a5b1c4" },
-        sold: { base: "#7c0313", hover: "#a8081b" },
-        notForSale: { base: "#5b5b5b", hover: "#5b5b5b" }
+        sold: { base: "#636363", hover: "#484848" },
+        notForSale: { base: "#869393", hover: "#869393" }
     };
 
     const statusLabels = {
@@ -388,7 +388,7 @@
         };
         const hasBooking = parcel.status === "free";
         const bookingButton = hasBooking
-            ? `<a href="${parcel.link}" style="display:inline-flex;align-items:center;gap:8px;padding:12px 16px;background:#309F48;color:#fff;text-decoration:none;border-radius:10px;font-weight:700;">Забронировать</a>`
+            ? `<a href="${parcel.link}" target="_blank" style="display:inline-flex;align-items:center;gap:8px;padding:12px 16px;background:#309F48;color:#fff;text-decoration:none;border-radius:10px;font-weight:700;">Забронировать</a>`
             : "";
         const displayId = parcel.id ?? "—";
         const statusText = statusLabels[parcel.status] ?? "";
