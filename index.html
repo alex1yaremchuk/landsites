@@ -206,7 +206,7 @@
         return { x: bestCell.x, y: bestCell.y, d: bestCell.d };
     }
 
-    const debugLabelPoints = true;
+    const debugLabelPoints = false;
     const debugShowLabelDots = false;
     const debugCenterLogLines = [];
     const precomputedCenters = new Map([
@@ -297,11 +297,7 @@
     function labelPointFromRaw(coordsRaw, parcelId = null) {
         // coordsRaw: [ [x, y], ... ] in local meters
         if (parcelId !== null && precomputedCenters.has(parcelId)) {
-            const latlon = precomputedCenters.get(parcelId);
-            if (debugLabelPoints) {
-                console.log(`CENTER_USED ${parcelId} ${latlon[0].toFixed(6)} ${latlon[1].toFixed(6)} precomputed`);
-            }
-            return latlon;
+            return precomputedCenters.get(parcelId);
         }
         const ringXY = coordsRaw.map(([x, y]) => [x, y]);
         const centroid = ringCentroid(ringXY);
