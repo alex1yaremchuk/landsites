@@ -89,8 +89,63 @@
     const openedState = { id: null };
     const sheetRefreshState = { inFlight: false };
 
-    // polylabel (Mapbox) — поиск точки, максимально удаленной от краев полигона
+    const centroidDistanceTolerance = 2.0;
+
+    function ringBBox(ring) {
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        ring.forEach(p => {
+            minX = Math.min(minX, p[0]); minY = Math.min(minY, p[1]);
+            maxX = Math.max(maxX, p[0]); maxY = Math.max(maxY, p[1]);
+        });
+        return { minX, minY, maxX, maxY };
+    }
+
+    function ringCentroid(ring) {
+        let area = 0;
+        let cx = 0;
+        let cy = 0;
+        for (let i = 0, len = ring.length - 1; i < len; i++) {
+            const [x0, y0] = ring[i];
+            const [x1, y1] = ring[i + 1];
+            const a = x0 * y1 - x1 * y0;
+            area += a;
+            cx += (x0 + x1) * a;
+            cy += (y0 + y1) * a;
+        }
+        area *= 0.5;
+        if (area === 0) {
+            const bbox = ringBBox(ring);
+            return [(bbox.minX + bbox.maxX) / 2, (bbox.minY + bbox.maxY) / 2];
+        }
+        return [cx / (6 * area), cy / (6 * area)];
+    }
+
+    function pointToSegmentDist(p, a, b) {
+        let x = a[0], y = a[1];
+        const dx = b[0] - x, dy = b[1] - y;
+        if (dx !== 0 || dy !== 0) {
+            const t = ((p[0] - x) * dx + (p[1] - y) * dy) / (dx * dx + dy * dy);
+            if (t > 1) { x = b[0]; y = b[1]; }
+            else if (t > 0) { x += dx * t; y += dy * t; }
+        }
+        return Math.hypot(p[0] - x, p[1] - y);
+    }
+
+    function pointToPolygonDist(p, ring) {
+        let inside = false;
+        let minDist = Infinity;
+        for (let i = 0, len = ring.length, j = len - 1; i < len; j = i++) {
+            const a = ring[i], b = ring[j];
+            if ((a[1] > p[1]) !== (b[1] > p[1]) &&
+                p[0] < (b[0] - a[0]) * (p[1] - a[1]) / (b[1] - a[1]) + a[0]) inside = !inside;
+            minDist = Math.min(minDist, pointToSegmentDist(p, a, b));
+        }
+        return (inside ? 1 : -1) * minDist;
+    }
+
+    // polylabel (Mapbox) - поиск точки, максимально удаленной от краев полигона
     function polylabel(polygon, precision = 1.0) {
+        function dist2(a, b) { const dx = a[0] - b[0]; const dy = a[1] - b[1]; return dx * dx + dy * dy; }
         function dist(a, b) { return Math.hypot(a[0] - b[0], a[1] - b[1]); }
         function pointToSegmentDist(p, a, b) {
             let x = a[0], y = a[1];
@@ -102,30 +157,18 @@
             }
             return dist(p, [x, y]);
         }
-        function pointToPolygonDist(p, polygon) {
-            let inside = false;
-            let minDist = Infinity;
-            for (let k = 0; k < polygon.length; k++) {
-                const ring = polygon[k];
-                for (let i = 0, len = ring.length, j = len - 1; i < len; j = i++) {
-                    const a = ring[i], b = ring[j];
-                    if ((a[1] > p[1]) !== (b[1] > p[1]) &&
-                        p[0] < (b[0] - a[0]) * (p[1] - a[1]) / (b[1] - a[1]) + a[0]) inside = !inside;
-                    minDist = Math.min(minDist, pointToSegmentDist(p, a, b));
-                }
-            }
-            return (inside ? 1 : -1) * minDist;
-        }
         function getPolygonBBox(polygon) {
-            let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-            polygon[0].forEach(p => {
-                minX = Math.min(minX, p[0]); minY = Math.min(minY, p[1]);
-                maxX = Math.max(maxX, p[0]); maxY = Math.max(maxY, p[1]);
-            });
-            return { minX, minY, maxX, maxY };
+            return ringBBox(polygon[0]);
         }
-        function Cell(x, y, h, d) { this.x = x; this.y = y; this.h = h; this.d = d || 0; this.max = this.d + this.h * Math.SQRT2; }
+        function Cell(x, y, h) {
+            this.x = x;
+            this.y = y;
+            this.h = h;
+            this.d = pointToPolygonDist([x, y], polygon[0]);
+            this.max = this.d + this.h * Math.SQRT2;
+        }
         const bbox = getPolygonBBox(polygon);
+        const centroid = ringCentroid(polygon[0]);
         const cellSize = Math.min(bbox.maxX - bbox.minX, bbox.maxY - bbox.minY);
         let h = cellSize;
         if (h === 0) return [polygon[0][0][0], polygon[0][0][1]];
@@ -135,17 +178,23 @@
                 cellQueue.push(new Cell(x + cellSize / 2, y + cellSize / 2, cellSize / 2));
             }
         }
-        let bestCell = new Cell(bbox.minX + (bbox.maxX - bbox.minX) / 2, bbox.minY + (bbox.maxY - bbox.minY) / 2, 0, pointToPolygonDist([bbox.minX + (bbox.maxX - bbox.minX) / 2, bbox.minY + (bbox.maxY - bbox.minY) / 2], polygon));
+        let bestCell = new Cell(centroid[0], centroid[1], 0);
+        const bboxCell = new Cell(bbox.minX + (bbox.maxX - bbox.minX) / 2, bbox.minY + (bbox.maxY - bbox.minY) / 2, 0);
+        if (bboxCell.d > bestCell.d) bestCell = bboxCell;
         for (let i = 0; i < polygon[0].length; i++) {
             const c = polygon[0][i];
-            const d = pointToPolygonDist(c, polygon);
-            if (d > bestCell.d) bestCell = new Cell(c[0], c[1], 0, d);
+            const cell = new Cell(c[0], c[1], 0);
+            if (cell.d > bestCell.d || (Math.abs(cell.d - bestCell.d) < 1e-6 && dist2([cell.x, cell.y], centroid) < dist2([bestCell.x, bestCell.y], centroid))) {
+                bestCell = cell;
+            }
         }
         function sortByMax(a, b) { return b.max - a.max; }
         cellQueue.sort(sortByMax);
         while (cellQueue.length) {
             const cell = cellQueue.shift();
-            if (cell.d > bestCell.d) bestCell = cell;
+            if (cell.d > bestCell.d || (Math.abs(cell.d - bestCell.d) < 1e-6 && dist2([cell.x, cell.y], centroid) < dist2([bestCell.x, bestCell.y], centroid))) {
+                bestCell = cell;
+            }
             if (cell.max - bestCell.d <= precision) continue;
             const h2 = cell.h / 2;
             cellQueue.push(new Cell(cell.x - h2, cell.y - h2, h2));
@@ -154,14 +203,119 @@
             cellQueue.push(new Cell(cell.x + h2, cell.y + h2, h2));
             cellQueue.sort(sortByMax);
         }
-        return [bestCell.x, bestCell.y];
+        return { x: bestCell.x, y: bestCell.y, d: bestCell.d };
     }
 
-    function labelPoint(coords) {
-        // coords: [ [lat, lon], ... ]
-        const ringLonLat = coords.map(([lat, lon]) => [lon, lat]);
-        const [x, y] = polylabel([ringLonLat], 0.5);
-        return [y, x];
+    const debugLabelPoints = true;
+    const debugShowLabelDots = false;
+    const debugCenterLogLines = [];
+    const precomputedCenters = new Map([
+        [1, [55.370662, 38.090714]],
+        [2, [55.370578, 38.089591]],
+        [3, [55.370479, 38.088484]],
+        [4, [55.370381, 38.087386]],
+        [5, [55.370283, 38.086297]],
+        [6, [55.370193, 38.085211]],
+        [7, [55.370106, 38.084115]],
+        [8, [55.370018, 38.083008]],
+        [9, [55.369773, 38.081393]],
+        [10, [55.370600, 38.080318]],
+        [11, [55.371302, 38.080166]],
+        [12, [55.371852, 38.079834]],
+        [13, [55.372520, 38.079325]],
+        [14, [55.373528, 38.079775]],
+        [15, [55.374729, 38.080677]],
+        [16, [55.375086, 38.082035]],
+        [17, [55.375417, 38.084483]],
+        [18, [55.375418, 38.086488]],
+        [19, [55.375386, 38.087862]],
+        [20, [55.375442, 38.088762]],
+        [21, [55.375367, 38.089572]],
+        [22, [55.372212, 38.088543]],
+        [25, [55.371949, 38.085447]],
+        [26, [55.371818, 38.083899]],
+        [27, [55.371687, 38.082351]],
+        [28, [55.373446, 38.081889]],
+        [29, [55.373577, 38.083437]],
+        [30, [55.373709, 38.084985]],
+        [33, [55.373971, 38.088080]],
+        [34, [55.370610, 38.094194]],
+        [35, [55.371057, 38.095988]],
+        [36, [55.371177, 38.097094]],
+        [37, [55.371184, 38.098322]],
+        [38, [55.371205, 38.099643]],
+        [39, [55.371262, 38.100969]],
+        [40, [55.371305, 38.102247]],
+        [41, [55.371122, 38.095044]],
+        [42, [55.371155, 38.093805]],
+        [43, [55.371608, 38.093190]],
+        [44, [55.371953, 38.094229]],
+        [45, [55.372204, 38.094828]],
+        [46, [55.372479, 38.095359]],
+        [47, [55.372733, 38.095918]],
+        [48, [55.372968, 38.096488]],
+        [49, [55.373204, 38.097057]],
+        [50, [55.373439, 38.097627]],
+        [51, [55.373675, 38.098197]],
+        [52, [55.373926, 38.098779]],
+        [53, [55.372043, 38.092088]],
+        [54, [55.372504, 38.092965]],
+        [55, [55.372758, 38.093578]],
+        [56, [55.372967, 38.094084]],
+        [57, [55.373176, 38.094590]],
+        [58, [55.373386, 38.095097]],
+        [59, [55.373595, 38.095603]],
+        [60, [55.373804, 38.096109]],
+        [61, [55.374013, 38.096615]],
+        [62, [55.374223, 38.097122]],
+        [63, [55.374432, 38.097628]],
+        [64, [55.374681, 38.098137]],
+        [65, [55.374875, 38.098755]],
+        [66, [55.372497, 38.091763]],
+        [67, [55.372904, 38.092453]],
+        [68, [55.373157, 38.093067]],
+        [69, [55.373367, 38.093572]],
+        [70, [55.373576, 38.094078]],
+        [71, [55.373785, 38.094585]],
+        [72, [55.373995, 38.095092]],
+        [73, [55.374204, 38.095597]],
+        [74, [55.374470, 38.096241]],
+        [75, [55.374863, 38.096883]],
+        [76, [55.373340, 38.091551]],
+        [77, [55.373648, 38.092229]],
+        [78, [55.373873, 38.092774]],
+        [79, [55.374098, 38.093318]],
+        [80, [55.374323, 38.093862]],
+        [81, [55.374528, 38.094432]],
+        [82, [55.373967, 38.091340]],
+        [83, [55.374305, 38.092076]],
+        [84, [55.374642, 38.092950]],
+        [85, [55.374774, 38.091238]],
+        [86, [55.375112, 38.090900]]
+    ]);
+
+    function labelPointFromRaw(coordsRaw, parcelId = null) {
+        // coordsRaw: [ [x, y], ... ] in local meters
+        if (parcelId !== null && precomputedCenters.has(parcelId)) {
+            const latlon = precomputedCenters.get(parcelId);
+            if (debugLabelPoints) {
+                console.log(`CENTER_USED ${parcelId} ${latlon[0].toFixed(6)} ${latlon[1].toFixed(6)} precomputed`);
+            }
+            return latlon;
+        }
+        const ringXY = coordsRaw.map(([x, y]) => [x, y]);
+        const centroid = ringCentroid(ringXY);
+        const best = polylabel([ringXY], 0.1);
+        const centroidDist = pointToPolygonDist(centroid, ringXY);
+        const useCentroid = centroidDist > 0 && centroidDist >= best.d - centroidDistanceTolerance;
+        const x = useCentroid ? centroid[0] : best.x;
+        const y = useCentroid ? centroid[1] : best.y;
+        const latlon = applyTransform(x, y);
+        if (debugLabelPoints && parcelId !== null) {
+            const method = useCentroid ? "centroid" : "polylabel";
+            debugCenterLogLines.push(`CENTER ${parcelId} ${latlon[0].toFixed(6)} ${latlon[1].toFixed(6)} ${method} centroidDist=${centroidDist.toFixed(2)} polyDist=${best.d.toFixed(2)} rawXY=${x.toFixed(2)},${y.toFixed(2)}`);
+        }
+        return latlon;
     }
 
     function applyTransform(x, y) {
@@ -366,12 +520,14 @@
             const coords = f.geometry.type === "Polygon"
                 ? f.geometry.coordinates[0]
                 : f.geometry.coordinates[0][0];
-            const latlon = coords.map(([x, y]) => applyTransform(x, y));
+            const coordsRaw = coords.map(([x, y]) => [x, y]);
+            const latlon = coordsRaw.map(([x, y]) => applyTransform(x, y));
             return {
                 id: numericId,
                 coords: latlon,
+                coordsRaw,
                 area: f.properties?.area ?? 1,
-                price: f.properties?.price ?? "—",
+                price: f.properties?.price ?? "-",
                 link: `/card/${numericId ?? ''}`,
                 status: "free",
                 isService
@@ -465,8 +621,9 @@
         }
 
         const polygonById = new Map();
+        debugCenterLogLines.length = 0;
         parcels.filter(p => !p.isService).forEach(parcel => {
-            const center = labelPoint(parcel.coords);
+            const center = labelPointFromRaw(parcel.coordsRaw, parcel.id);
             const label = new ymaps.Placemark(center, { iconContent: parcel.id ?? "" }, {
                 iconLayout: layout,
                 draggable: false,
@@ -476,7 +633,20 @@
             });
             labels.push(label);
             map.geoObjects.add(label);
+            if (debugLabelPoints && debugShowLabelDots) {
+                const dot = new ymaps.Circle([center, 2], {}, {
+                    fillColor: "#ff2d2d",
+                    fillOpacity: 0.9,
+                    strokeColor: "#ff2d2d",
+                    strokeOpacity: 0.9,
+                    strokeWidth: 1
+                });
+                map.geoObjects.add(dot);
+            }
         });
+        if (debugLabelPoints && debugCenterLogLines.length) {
+            console.log(`CENTER_DUMP\n${debugCenterLogLines.join("\n")}`);
+        }
 
         map.events.add("boundschange", (e) => {
             if (e.get('newZoom') !== e.get('oldZoom')) {
@@ -495,7 +665,7 @@
         });
 
         const markers = parcels.filter(p => !p.isService).map(parcel => {
-            const [clat, clon] = labelPoint(parcel.coords);
+            const [clat, clon] = labelPointFromRaw(parcel.coordsRaw, parcel.id);
             const fontSizePx = makeLabelFontPx(map.getZoom());
             const icon = makeIcon(parcel.id ?? "", fontSizePx);
             return L.marker([clat, clon], { icon, interactive: false }).addTo(labelGroup);
