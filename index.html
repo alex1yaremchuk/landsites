@@ -233,10 +233,10 @@
         [21, [55.375367, 38.089572]],
         [22, [55.372212, 38.088543]],
         [25, [55.371949, 38.085447]],
-        [26, [55.371818, 38.083899]],
+        [26, [55.371884, 38.084673]],
         [27, [55.371687, 38.082351]],
         [28, [55.373446, 38.081889]],
-        [29, [55.373577, 38.083437]],
+        [29, [55.373643, 38.084211]],
         [30, [55.373709, 38.084985]],
         [33, [55.373971, 38.088080]],
         [34, [55.370610, 38.094194]],
@@ -297,7 +297,10 @@
     function labelPointFromRaw(coordsRaw, parcelId = null) {
         // coordsRaw: [ [x, y], ... ] in local meters
         if (parcelId !== null && precomputedCenters.has(parcelId)) {
-            return precomputedCenters.get(parcelId);
+            const cached = precomputedCenters.get(parcelId);
+            if (Array.isArray(cached)) {
+                return cached;
+            }
         }
         const ringXY = coordsRaw.map(([x, y]) => [x, y]);
         const centroid = ringCentroid(ringXY);
@@ -307,6 +310,10 @@
         const x = useCentroid ? centroid[0] : best.x;
         const y = useCentroid ? centroid[1] : best.y;
         const latlon = applyTransform(x, y);
+        if (parcelId !== null && precomputedCenters.has(parcelId)) {
+            precomputedCenters.set(parcelId, latlon);
+            console.log(`precomputedCenters ${parcelId}: [${latlon[0].toFixed(6)}, ${latlon[1].toFixed(6)}]`);
+        }
         if (debugLabelPoints && parcelId !== null) {
             const method = useCentroid ? "centroid" : "polylabel";
             debugCenterLogLines.push(`CENTER ${parcelId} ${latlon[0].toFixed(6)} ${latlon[1].toFixed(6)} ${method} centroidDist=${centroidDist.toFixed(2)} polyDist=${best.d.toFixed(2)} rawXY=${x.toFixed(2)},${y.toFixed(2)}`);
