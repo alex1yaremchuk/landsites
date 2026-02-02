@@ -43,6 +43,17 @@
 <script>
     const useLeaflet = false; // true = Leaflet, false = Yandex
 
+    // Настройки стартового вида карты (можно менять)
+    const mapViewCfg = {
+        baseZoom: 15,
+        mobile: {
+            maxWidthPx: 900,
+            zoomDelta: -0.1,   // на мобилке отдаляем на 1 шаг
+            offsetLon: 0, // сдвиг влево (минус = запад)
+            offsetLat: 0
+        }
+    };
+
     // const sheetUrl = "https://docs.google.com/spreadsheets/d/e/2PACX-1vR3xNzYxN5m81iBLPw1DfO-ACg_bFrFRVKXj0MH0XhsKwfgeyhf-nQrkRMguWVASlhn_15amEGx6dgd/pub?gid=1663025527&single=true&output=csv";
     const sheetUrl = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTDCVOAVkW1FjlIOSZVE2XDNLK5ga1NMktiy40vyMPiRi8BDz72EyBYVXe-ve1fk9T5ffa6veTLle5Y/pub?gid=706240354&single=true&output=csv";
     const sheetCacheKey = "landsites.sheetCache.v1";
@@ -716,12 +727,38 @@
         openedState.id = parcel.id;
     }
 
+    function isMobileView() {
+        return window.matchMedia && window.matchMedia(`(max-width: ${mapViewCfg.mobile.maxWidthPx}px)`).matches;
+    }
+
+    function applyMobileViewAdjustmentsYandex(map, minZoom, maxZoom) {
+        if (!isMobileView()) return;
+        const currentCenter = map.getCenter();
+        const targetZoom = Math.min(maxZoom, Math.max(minZoom, map.getZoom() + mapViewCfg.mobile.zoomDelta));
+        const adjustedCenter = [
+            currentCenter[0] + mapViewCfg.mobile.offsetLat,
+            currentCenter[1] + mapViewCfg.mobile.offsetLon
+        ];
+        map.setCenter(adjustedCenter, targetZoom, { duration: 0, checkZoomRange: true });
+    }
+
+    function applyMobileViewAdjustmentsLeaflet(map) {
+        if (!isMobileView()) return;
+        const currentCenter = map.getCenter();
+        const targetZoom = map.getZoom() + mapViewCfg.mobile.zoomDelta;
+        const adjustedCenter = [
+            currentCenter.lat + mapViewCfg.mobile.offsetLat,
+            currentCenter.lng + mapViewCfg.mobile.offsetLon
+        ];
+        map.setView(adjustedCenter, targetZoom, { animate: false });
+    }
+
     async function initYandex() {
         const minZoom = 9;
         const maxZoom = 18;
         const map = new ymaps.Map("map", {
             center: [transformCfg.targetCenter.lat, transformCfg.targetCenter.lon],
-            zoom: 15,
+            zoom: mapViewCfg.baseZoom,
             controls: ['zoomControl']
         }, {
             suppressMapOpenBlock: true
@@ -743,12 +780,21 @@
         applyStatusMapToParcels(statusMap, parcels);
 
         const allCoords = parcels.filter(p => !p.isService).flatMap(p => p.coords);
+        let mobileApplied = false;
+        const applyMobileOnce = () => {
+            if (mobileApplied) return;
+            mobileApplied = true;
+            applyMobileViewAdjustmentsYandex(map, minZoom, maxZoom);
+        };
         if (allCoords.length) {
             const lats = allCoords.map(c => c[0]);
             const lons = allCoords.map(c => c[1]);
             map.setBounds([[Math.min(...lats), Math.min(...lons)], [Math.max(...lats), Math.max(...lons)]], { checkZoomRange: true, duration: 0 });
             const clampedZoom = Math.min(maxZoom, Math.max(minZoom, map.getZoom()));
             if (clampedZoom !== map.getZoom()) map.setZoom(clampedZoom, { duration: 0 });
+            map.events.once("actionend", applyMobileOnce);
+        } else {
+            applyMobileOnce();
         }
 
         const polygonById = new Map();
@@ -798,7 +844,7 @@
         }
         const map = L.map('map', {
             center: [transformCfg.targetCenter.lat, transformCfg.targetCenter.lon],
-            zoom: 15,
+            zoom: mapViewCfg.baseZoom,
             minZoom: 12,
             maxZoom: 17,
             zoomControl: true,
@@ -822,10 +868,19 @@
         applyStatusMapToParcels(statusMap, parcels);
 
         const allLatLng = parcels.filter(p => !p.isService).flatMap(p => p.coords.map(([lat, lon]) => [lat, lon]));
+        let mobileApplied = false;
+        const applyMobileOnce = () => {
+            if (mobileApplied) return;
+            mobileApplied = true;
+            applyMobileViewAdjustmentsLeaflet(map);
+        };
         if (allLatLng.length) {
             const lats = allLatLng.map(c => c[0]);
             const lons = allLatLng.map(c => c[1]);
             map.fitBounds([[Math.min(...lats), Math.min(...lons)], [Math.max(...lats), Math.max(...lons)]], { padding: [20, 20] });
+            map.once('moveend', applyMobileOnce);
+        } else {
+            applyMobileOnce();
         }
 
         const polygonById = new Map();
