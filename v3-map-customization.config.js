@@ -1,0 +1,66 @@
+// Yandex Maps API v3 base map customization for v3.html
+// Goal: make toponyms less prominent and roads more prominent.
+window.v3MapCustomization = [
+    // Toponyms/labels: reduce contrast and prominence.
+    {
+        elements: "label.text.fill",
+        stylers: [
+            { color: "#6f7785" },
+            { opacity: 0.55 },
+            { saturation: -0.35 },
+            { lightness: 0.1 }
+        ]
+    },
+    {
+        elements: "label.text.outline",
+        stylers: [
+            { color: "#ffffff" },
+            { opacity: 0.2 }
+        ]
+    },
+    {
+        elements: "label.icon",
+        stylers: [
+            { opacity: 0.55 }
+        ]
+    },
+
+    // Roads: stronger contrast and higher visibility.
+    {
+        tags: { any: ["road"] },
+        elements: "geometry",
+        stylers: [
+            { color: "#f8fafc" },
+            { saturation: 0.35 },
+            { lightness: 0.15 },
+            { opacity: 0.95 }
+        ]
+    },
+    {
+        tags: { any: ["road"] },
+        elements: "geometry.outline",
+        stylers: [
+            { color: "#8b95a5" },
+            { opacity: 0.85 }
+        ]
+    },
+
+    // Major roads: subtle highlight.
+    {
+        tags: { any: ["road_1", "road_2", "road_3"] },
+        elements: "geometry",
+        stylers: [
+            { color: "#ffe08a" },
+            { saturation: 0.6 },
+            { lightness: 0.05 }
+        ]
+    },
+    {
+        tags: { any: ["road_1", "road_2", "road_3"] },
+        elements: "geometry.outline",
+        stylers: [
+            { color: "#a16207" },
+            { opacity: 0.9 }
+        ]
+    }
+];
