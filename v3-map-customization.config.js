@@ -24,16 +24,17 @@ window.v3MapCustomization = [
             { opacity: 0.55 }
         ]
     },
-    // Hide minor street labels, keep higher-priority road names visible.
+    // Hide all road labels (street names and road shields).
+    // This suppresses labels like "Луговая ул." even when they are in higher road classes.
     {
-        tags: { any: ["road_minor", "road_local", "road_unclassified", "road_6", "road_7"] },
+        tags: { any: ["road"] },
         elements: "label.text",
         stylers: [
             { visibility: "off" }
         ]
     },
     {
-        tags: { any: ["road_minor", "road_local", "road_unclassified", "road_6", "road_7"] },
+        tags: { any: ["road"] },
         elements: "label.icon",
         stylers: [
             { visibility: "off" }
