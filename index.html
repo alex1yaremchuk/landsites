@@ -29,6 +29,14 @@
         #map [class*="ymaps-"][class*="-copyright"] {
             display: none !important;
         }
+        /* Выравнивание Leaflet под текущее позиционирование контролов Yandex */
+        #map .leaflet-top.leaflet-right .leaflet-control-zoom {
+            margin-top: 120px;
+        }
+        /* Приглушаем подложку для Leaflet в том же стиле */
+        #map .leaflet-tile-pane {
+            filter: grayscale(1) brightness(0.55) saturate(0.7);
+        }
     </style>
 </head>
 <body>
@@ -41,7 +49,8 @@
 <script src="https://api-maps.yandex.ru/2.1/?lang=ru_RU&apikey=16d442f1-df6c-4a2d-a863-ed6a830dd524"></script>
 
 <script>
-    const useLeaflet = false; // true = Leaflet, false = Yandex
+    const useLeaflet = true; // true = Leaflet, false = Yandex
+    const showServicePolygons = Boolean(window.showServicePolygons);
 
     // Настройки стартового вида карты (можно менять)
     const mapViewCfg = {
@@ -57,7 +66,8 @@
     // const sheetUrl = "https://docs.google.com/spreadsheets/d/e/2PACX-1vR3xNzYxN5m81iBLPw1DfO-ACg_bFrFRVKXj0MH0XhsKwfgeyhf-nQrkRMguWVASlhn_15amEGx6dgd/pub?gid=1663025527&single=true&output=csv";
     const sheetUrl = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTDCVOAVkW1FjlIOSZVE2XDNLK5ga1NMktiy40vyMPiRi8BDz72EyBYVXe-ve1fk9T5ffa6veTLle5Y/pub?gid=706240354&single=true&output=csv";
     const sheetCacheKey = "landsites.sheetCache.v1";
-    const geojsonUrl = "genplan_vega_polygons.v3.geojson";
+    const geojsonVersion = "3";
+    const geojsonUrl = `genplan_vega_polygons.geojson?v=${geojsonVersion}`;
 
     const colors = {
         free: { base: "#309F48", hover: "#46bf5f" },
@@ -517,7 +527,7 @@
             if (!polygon) return;
             const palette = colors[parcel.status] ?? colors.free;
             polygon.options.set("fillColor", palette.base);
-            polygon.properties.set("hintContent", `??????? ${parcel.id}: ${statusLabels[parcel.status]}`);
+            polygon.properties.set("hintContent", getParcelHintText(parcel));
             if (openedState.id === parcel.id && mapInstance.balloon.isOpen()) {
                 const center = ymaps.util.bounds.getCenter(polygon.geometry.getBounds());
                 mapInstance.balloon.open(center, { contentBody: renderContent(parcel) });
@@ -525,14 +535,26 @@
         });
     }
 
-    function refreshLeafletPolygons(parcels, polygonById) {
+    function refreshLeafletPolygons(parcels, polygonById, mapInstance) {
         parcels.forEach(parcel => {
             if (parcel.isService || !parcel.id) return;
             const polygon = polygonById.get(parcel.id);
             if (!polygon) return;
             const palette = colors[parcel.status] ?? colors.free;
             polygon.setStyle({ fillColor: palette.base });
-            if (polygon.getPopup()) {
+            if (polygon.getTooltip()) {
+                polygon.setTooltipContent(getParcelHintText(parcel));
+            }
+            if (openedState.id === parcel.id) {
+                if (polygon.getPopup()) {
+                    polygon.setPopupContent(renderContent(parcel));
+                } else {
+                    polygon.bindPopup(renderContent(parcel), { closeButton: true });
+                }
+                if (!mapInstance.hasLayer(polygon.getPopup())) {
+                    polygon.openPopup();
+                }
+            } else if (polygon.getPopup()) {
                 polygon.setPopupContent(renderContent(parcel));
             }
         });
@@ -587,6 +609,10 @@
                 ${bookingButton}
             </div>
         `;
+    }
+
+    function getParcelHintText(parcel) {
+        return `Участок ${parcel.id}: ${statusLabels[parcel.status]}`;
     }
 
     function makeLabelFontPx(currentZoom) {
@@ -757,15 +783,32 @@
         map.setCenter(adjustedCenter, targetZoom, { duration: 0, checkZoomRange: true });
     }
 
-    function applyMobileViewAdjustmentsLeaflet(map) {
+    function applyMobileViewAdjustmentsLeaflet(map, minZoom, maxZoom) {
         if (!isMobileView()) return;
         const currentCenter = map.getCenter();
-        const targetZoom = map.getZoom() + mapViewCfg.mobile.zoomDelta;
+        const targetZoom = Math.min(maxZoom, Math.max(minZoom, map.getZoom() + mapViewCfg.mobile.zoomDelta));
         const adjustedCenter = [
             currentCenter.lat + mapViewCfg.mobile.offsetLat,
             currentCenter.lng + mapViewCfg.mobile.offsetLon
         ];
         map.setView(adjustedCenter, targetZoom, { animate: false });
+    }
+
+    function toggleLeafletParcelPopup(parcel, polygon, mapInstance) {
+        const popup = polygon.getPopup();
+        const isSame = openedState.id === parcel.id && popup && mapInstance.hasLayer(popup);
+        if (isSame) {
+            mapInstance.closePopup();
+            openedState.id = null;
+            return;
+        }
+        if (popup) {
+            polygon.setPopupContent(renderContent(parcel));
+        } else {
+            polygon.bindPopup(renderContent(parcel), { closeButton: true });
+        }
+        polygon.openPopup();
+        openedState.id = parcel.id;
     }
 
     async function initYandex() {
@@ -871,11 +914,13 @@
             document.getElementById('map').innerText = "Leaflet не загрузился (проверь доступ к скрипту).";
             return;
         }
+        const minZoom = 9;
+        const maxZoom = 18;
         const map = L.map('map', {
             center: [transformCfg.targetCenter.lat, transformCfg.targetCenter.lon],
             zoom: mapViewCfg.baseZoom,
-            minZoom: 12,
-            maxZoom: 17,
+            minZoom,
+            maxZoom,
             zoomControl: true,
             scrollWheelZoom: false
         });
@@ -901,12 +946,14 @@
         const applyMobileOnce = () => {
             if (mobileApplied) return;
             mobileApplied = true;
-            applyMobileViewAdjustmentsLeaflet(map);
+            applyMobileViewAdjustmentsLeaflet(map, minZoom, maxZoom);
         };
         if (allLatLng.length) {
             const lats = allLatLng.map(c => c[0]);
             const lons = allLatLng.map(c => c[1]);
             map.fitBounds([[Math.min(...lats), Math.min(...lons)], [Math.max(...lats), Math.max(...lons)]], { padding: [20, 20] });
+            const clampedZoom = Math.min(maxZoom, Math.max(minZoom, map.getZoom()));
+            if (clampedZoom !== map.getZoom()) map.setZoom(clampedZoom, { animate: false });
             map.once('moveend', applyMobileOnce);
         } else {
             applyMobileOnce();
@@ -916,7 +963,9 @@
             const servicePolygons = [];
             parcels.filter(p => p.isService).forEach(parcel => {
                 const polygon = L.polygon(parcel.coords, servicePolygonStyleLeaflet).addTo(map);
-                polygon.on("click", () => {
+                polygon.bindTooltip("Технический полигон", { sticky: true });
+                polygon.on("click", (e) => {
+                    L.DomEvent.stopPropagation(e);
                     servicePolygons.forEach(p => p.setStyle({ color: servicePolygonStyleLeaflet.color }));
                     polygon.setStyle({ color: servicePolygonActiveStrokeColor });
                 });
@@ -932,10 +981,11 @@
                 fillColor: colors[parcel.status].base,
                 fillOpacity: 1
             }).addTo(map);
+            polygon.bindTooltip(getParcelHintText(parcel), { sticky: true });
 
-            polygon.on('click', () => {
-                const content = renderContent(parcel);
-                polygon.bindPopup(content, { closeButton: true }).openPopup();
+            polygon.on('click', (e) => {
+                L.DomEvent.stopPropagation(e);
+                toggleLeafletParcelPopup(parcel, polygon, map);
             });
             polygon.on('mouseover', () => polygon.setStyle({ fillColor: colors[parcel.status].hover }));
             polygon.on('mouseout', () => polygon.setStyle({ fillColor: colors[parcel.status].base }));
@@ -950,15 +1000,20 @@
             try {
                 const result = await loadSheetData();
                 const changed = applyStatusMapToParcels(result.map, parcels);
-                if (changed) refreshLeafletPolygons(parcels, polygonById);
+                if (changed) refreshLeafletPolygons(parcels, polygonById, map);
             } finally {
                 sheetRefreshState.inFlight = false;
             }
         }, 20000);
 
+        map.on('popupclose', () => {
+            openedState.id = null;
+        });
+
         // Закрываем попап при клике в пустую область карты
         map.on('click', () => {
             map.closePopup();
+            openedState.id = null;
         });
     }
 
