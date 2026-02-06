@@ -24,6 +24,21 @@ window.v3MapCustomization = [
             { opacity: 0.55 }
         ]
     },
+    // Hide minor street labels, keep higher-priority road names visible.
+    {
+        tags: { any: ["road_minor", "road_local", "road_unclassified", "road_6", "road_7"] },
+        elements: "label.text",
+        stylers: [
+            { visibility: "off" }
+        ]
+    },
+    {
+        tags: { any: ["road_minor", "road_local", "road_unclassified", "road_6", "road_7"] },
+        elements: "label.icon",
+        stylers: [
+            { visibility: "off" }
+        ]
+    },
 
     // Roads: stronger contrast and higher visibility.
     {
