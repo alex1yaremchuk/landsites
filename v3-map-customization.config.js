@@ -108,30 +108,45 @@ window.v3MapCustomization = [
         ]
     },
 
-    // Hide most local road labels (street names and shields).
+    // Label baseline: on.
     {
-        tags: { any: ["road"] },
+        elements: "label.text",
+        stylers: [
+            { visibility: "on" },
+            { opacity: 0.92 }
+        ]
+    },
+    {
+        elements: "label.icon",
+        stylers: [
+            { visibility: "on" },
+            { opacity: 0.92 }
+        ]
+    },
+
+    // Hide labels for minor roads first.
+    {
+        tags: { any: ["road_4", "road_5", "road_6", "road_7"] },
         elements: "label.text",
         stylers: [
             { visibility: "off" }
         ]
     },
     {
-        tags: { any: ["road"] },
+        tags: { any: ["road_4", "road_5", "road_6", "road_7"] },
         elements: "label.icon",
         stylers: [
             { visibility: "off" }
         ]
     },
 
-    // Keep labels for major roads/highways (e.g., A-107).
+    // Keep major roads/highways visible.
     {
         tags: { any: ["road_1", "road_2", "road_3"] },
         elements: "label.text",
         stylers: [
             { visibility: "on" },
-            { opacity: 0.62 },
-            { color: "#d7dee8" }
+            { opacity: 0.96 }
         ]
     },
     {
@@ -139,42 +154,46 @@ window.v3MapCustomization = [
         elements: "label.icon",
         stylers: [
             { visibility: "on" },
-            { opacity: 0.62 }
+            { opacity: 0.96 }
         ]
     },
 
-    // Force-enable labels specifically for road_2.
+    // Hide house/building/address labels.
     {
-        tags: { any: ["road_2"] },
+        tags: { all: ["structure", "building"] },
+        elements: "label",
+        stylers: [
+            { visibility: "off" }
+        ]
+    },
+    {
+        tags: { all: ["admin", "address"] },
+        elements: "label",
+        stylers: [
+            { visibility: "off" }
+        ]
+    },
+    {
+        tags: { all: ["structure", "building", "entrance"] },
+        elements: "label",
+        stylers: [
+            { visibility: "off" }
+        ]
+    },
+
+    // Hide non-road administrative/land labels (often includes dacha plot numbers).
+    {
+        tags: { any: ["admin", "land", "structure"] },
         elements: "label.text",
         stylers: [
-            { visibility: "on" },
-            { opacity: 1 }
+            { visibility: "off" }
         ]
     },
     {
-        tags: { any: ["road_2"] },
-        elements: "label.text.fill",
-        stylers: [
-            { visibility: "on" },
-            { opacity: 0.95 },
-            { color: "#eef2f7" }
-        ]
-    },
-    {
-        tags: { any: ["road_2"] },
-        elements: "label.text.outline",
-        stylers: [
-            { visibility: "on" },
-            { opacity: 0.3 }
-        ]
-    },
-    {
-        tags: { any: ["road_2"] },
+        tags: { any: ["admin", "land", "structure"] },
         elements: "label.icon",
         stylers: [
-            { visibility: "on" },
-            { opacity: 0.95 }
+            { visibility: "off" }
         ]
     }
 ];
