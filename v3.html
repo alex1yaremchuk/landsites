@@ -15,10 +15,8 @@
         #map {
             width: 100%;
             height: 100vh;
-        }
-        /* Приглушаем подложку для Yandex */
-        #map [class*="ymaps-"][class*="-ground-pane"] {
-            filter: grayscale(1) brightness(0.55) saturate(0.7);
+            position: relative;
+            overflow: hidden;
         }
         /* нижние лейблы Yandex Maps */
         #map [class*="ymaps-"][class*="-map-copyrights-promo"],
@@ -43,7 +41,72 @@
             padding: 0 6px;
         }
         .parcel-popup {
-            min-width: 220px;
+            display: inline-block;
+            width: fit-content;
+            width: max-content;
+            max-width: none;
+            padding: 14px 16px;
+            border-radius: 14px;
+            background: #ffffff;
+            border: 1px solid rgba(148, 163, 184, 0.45);
+            box-shadow: 0 14px 32px rgba(2, 6, 23, 0.32);
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            position: relative;
+            transform: translate(-50%, calc(-100% - 10px));
+            transform-origin: 50% 100%;
+            pointer-events: auto;
+        }
+        .parcel-popup::after {
+            content: "";
+            position: absolute;
+            left: 50%;
+            bottom: -8px;
+            width: 14px;
+            height: 14px;
+            transform: translateX(-50%) rotate(45deg);
+            background: #ffffff;
+            border-right: 1px solid rgba(148, 163, 184, 0.45);
+            border-bottom: 1px solid rgba(148, 163, 184, 0.45);
+        }
+        .parcel-popup a {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 12px 16px;
+            background: #309f48;
+            color: #fff;
+            text-decoration: none;
+            border-radius: 10px;
+            font-weight: 700;
+        }
+        .map-v3-zoom {
+            position: absolute;
+            top: 120px;
+            right: 14px;
+            z-index: 1700;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            pointer-events: auto;
+        }
+        .map-v3-zoom button {
+            width: 40px;
+            height: 40px;
+            border: 0;
+            border-radius: 10px;
+            background: rgba(255, 255, 255, 0.95);
+            color: #111827;
+            font-size: 28px;
+            line-height: 1;
+            cursor: pointer;
+            box-shadow: 0 8px 24px rgba(2, 6, 23, 0.28);
+            padding: 0;
+        }
+        .map-v3-zoom button:active {
+            transform: translateY(1px);
+        }
+        .map-v3-zoom button[data-action="out"] {
+            font-size: 30px;
         }
     </style>
 </head>
@@ -52,7 +115,7 @@
 
 <!-- Yandex API v3 с ключом -->
 <script src="https://api-maps.yandex.ru/v3/?lang=ru_RU&apikey=bb452fd0-002b-4c60-a321-d7ab9e326744"></script>
-<script src="./v3-map-customization.config.js"></script>
+<script src="./v3-map-customization.config.js?v=20260207-3"></script>
 
 <script>
     const showServicePolygons = Boolean(window.showServicePolygons);
@@ -600,14 +663,14 @@
         };
         const hasBooking = parcel.status === "free";
         const bookingButton = hasBooking
-            ? `<a href="${parcel.link}" target="_blank" style="display:inline-flex;align-items:center;gap:8px;padding:12px 16px;background:#309F48;color:#fff;text-decoration:none;border-radius:10px;font-weight:700;">Забронировать</a>`
+            ? `<a href="${parcel.link}" target="_blank">Забронировать</a>`
             : "";
         const displayId = parcel.id ?? "—";
         const statusText = statusLabels[parcel.status] ?? "";
         const statusColor = statusColors[parcel.status] ?? "#111827";
 
         return `
-            <div style="font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; ">
+            <div style="font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;">
                 <div style="font-size:16px;font-weight:700;color:#111827;margin-bottom:10px;">Участок №${displayId}</div>
                 <div style="font-size:14px;color:#4b5563;margin-bottom:6px;">Площадь: ${parcel.area} м²</div>
                 <div style="font-size:14px;color:#4b5563;margin-bottom:12px;">Статус: <span style="color:${statusColor};font-weight:700;">${statusText}</span></div>
@@ -916,6 +979,95 @@
         map.setLocation({ center: adjustedCenter, zoom: targetZoom, duration: 0 });
     }
 
+    function addMapDimOverlayV3(map, YMapFeature) {
+        const worldBoundsLngLat = [
+            [-179.99, -85],
+            [179.99, -85],
+            [179.99, 85],
+            [-179.99, 85],
+            [-179.99, -85]
+        ];
+
+        const overlayFeature = new YMapFeature({
+            geometry: {
+                type: "Polygon",
+                coordinates: [worldBoundsLngLat]
+            },
+            style: {
+                fill: "#7b8390",
+                fillOpacity: 0.3,
+                stroke: []
+            }
+        });
+
+        map.addChild(overlayFeature);
+        return overlayFeature;
+    }
+
+    function addCustomZoomControlsV3(map, minZoom, maxZoom) {
+        const mapEl = document.getElementById("map");
+        if (!mapEl) return;
+
+        const prev = mapEl.querySelector(".map-v3-zoom");
+        if (prev) prev.remove();
+
+        const controls = document.createElement("div");
+        controls.className = "map-v3-zoom";
+
+        const zoomInBtn = document.createElement("button");
+        zoomInBtn.type = "button";
+        zoomInBtn.dataset.action = "in";
+        zoomInBtn.setAttribute("aria-label", "Увеличить");
+        zoomInBtn.textContent = "+";
+
+        const zoomOutBtn = document.createElement("button");
+        zoomOutBtn.type = "button";
+        zoomOutBtn.dataset.action = "out";
+        zoomOutBtn.setAttribute("aria-label", "Уменьшить");
+        zoomOutBtn.textContent = "−";
+
+        const stop = (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+        };
+        ["click", "dblclick", "mousedown", "mouseup", "pointerdown", "pointerup", "touchstart", "touchend", "wheel"]
+            .forEach(evt => controls.addEventListener(evt, stop, { passive: false }));
+
+        const getMapCenter = () => (
+            Array.isArray(map.center) && map.center.length === 2
+                ? map.center
+                : [transformCfg.targetCenter.lon, transformCfg.targetCenter.lat]
+        );
+
+        const getMapZoom = () => (
+            Number.isFinite(map.zoom) ? map.zoom : mapViewCfg.baseZoom
+        );
+
+        const changeZoom = (delta) => {
+            const currentZoom = getMapZoom();
+            const targetZoom = Math.min(maxZoom, Math.max(minZoom, currentZoom + delta));
+            if (targetZoom === currentZoom) return;
+            map.setLocation({
+                center: getMapCenter(),
+                zoom: targetZoom,
+                duration: 180
+            });
+        };
+
+        zoomInBtn.addEventListener("click", (e) => {
+            stop(e);
+            changeZoom(1);
+        });
+        zoomOutBtn.addEventListener("click", (e) => {
+            stop(e);
+            changeZoom(-1);
+        });
+
+        controls.appendChild(zoomInBtn);
+        controls.appendChild(zoomOutBtn);
+        mapEl.appendChild(controls);
+    }
+
     function refreshYandexPolygonsV3(parcels, featureById, popupState) {
         parcels.forEach(parcel => {
             if (parcel.isService || !parcel.id) return;
@@ -934,7 +1086,6 @@
             YMap,
             YMapFeature,
             YMapMarker,
-            YMapControls,
             YMapListener,
             YMapDefaultSchemeLayer,
             YMapDefaultFeaturesLayer
@@ -959,16 +1110,7 @@
         }));
         map.addChild(new YMapDefaultFeaturesLayer({}));
 
-        try {
-            const { YMapZoomControl } = await ymaps3.import("@yandex/ymaps3-default-ui-theme");
-            if (typeof YMapControls === "function" && typeof YMapZoomControl === "function") {
-                const controls = new YMapControls({ position: "top right" });
-                controls.addChild(new YMapZoomControl({}));
-                map.addChild(controls);
-            }
-        } catch (err) {
-            console.warn("YMapZoomControl не загрузился", err);
-        }
+        addCustomZoomControlsV3(map, minZoom, maxZoom);
 
         if (typeof map.setBehaviors === "function" && Array.isArray(map.behaviors) && map.behaviors.includes("scrollZoom")) {
             map.setBehaviors(map.behaviors.filter(b => b !== "scrollZoom"));
@@ -1007,6 +1149,7 @@
         map.addChild(mapListener);
 
         const allCoords = parcels.filter(p => !p.isService).flatMap(p => p.coords);
+        addMapDimOverlayV3(map, YMapFeature);
         if (allCoords.length) {
             const lats = allCoords.map(c => c[0]);
             const lons = allCoords.map(c => c[1]);

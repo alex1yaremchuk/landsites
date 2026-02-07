@@ -1,6 +1,17 @@
 // Yandex Maps API v3 base map customization for v3.html
 // Goal: make toponyms less prominent and roads more prominent.
 window.v3MapCustomization = [
+    // Global desaturation/dim for all map geometry.
+    // This is more stable for v3 vector rendering than CSS filters/overlays.
+    {
+        elements: "geometry",
+        stylers: [
+            { saturation: -1 },
+            { lightness: -0.08 },
+            { opacity: 0.9 }
+        ]
+    },
+
     // Toponyms/labels: reduce contrast and prominence.
     {
         elements: "label.text.fill",
@@ -46,9 +57,9 @@ window.v3MapCustomization = [
         tags: { any: ["road"] },
         elements: "geometry",
         stylers: [
-            { color: "#f8fafc" },
-            { saturation: 0.35 },
-            { lightness: 0.15 },
+            { color: "#d1d5db" },
+            { saturation: -1 },
+            { lightness: 0.02 },
             { opacity: 0.95 }
         ]
     },
@@ -66,16 +77,16 @@ window.v3MapCustomization = [
         tags: { any: ["road_1", "road_2", "road_3"] },
         elements: "geometry",
         stylers: [
-            { color: "#ffe08a" },
-            { saturation: 0.6 },
-            { lightness: 0.05 }
+            { color: "#b9c0cc" },
+            { saturation: -1 },
+            { lightness: 0.04 }
         ]
     },
     {
         tags: { any: ["road_1", "road_2", "road_3"] },
         elements: "geometry.outline",
         stylers: [
-            { color: "#a16207" },
+            { color: "#6b7280" },
             { opacity: 0.9 }
         ]
     }
