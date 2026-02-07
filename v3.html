@@ -28,6 +28,14 @@
             display: none !important;
         }
         .parcel-label-v3 {
+            display: block;
+            margin: 0;
+            padding: 0;
+            font-size: 0;
+            line-height: 0;
+            pointer-events: none;
+        }
+        .parcel-label-v3__text {
             display: inline-flex;
             align-items: center;
             justify-content: center;
@@ -37,7 +45,6 @@
             user-select: none;
             white-space: nowrap;
             transform: translate(-50%, -50%);
-            pointer-events: none;
             padding: 0 6px;
         }
         .parcel-popup {
@@ -784,7 +791,9 @@
         const labelGroup = L.layerGroup().addTo(map);
         const makeIcon = (text, fontSizePx) => L.divIcon({
             className: 'parcel-label',
-            html: makeLabelHtml(text, fontSizePx)
+            html: makeLabelHtml(text, fontSizePx),
+            iconSize: [0, 0],
+            iconAnchor: [0, 0]
         });
 
         const markers = parcels.filter(p => !p.isService).map(parcel => {
@@ -916,18 +925,23 @@
     function createLabelNodeV3(text) {
         const node = document.createElement("div");
         node.className = "parcel-label-v3";
-        node.textContent = text;
+        const textNode = document.createElement("span");
+        textNode.className = "parcel-label-v3__text";
+        textNode.textContent = text;
+        node.appendChild(textNode);
         return node;
     }
 
     function updateLabelNodesV3(labels, zoom) {
         const visible = zoom >= showLabelsFromZoom;
         const fontSizePx = Math.max(1, Math.round(makeLabelFontPx(zoom)));
-        labels.forEach(({ node }) => {
-            node.style.display = visible ? "inline-flex" : "none";
-            node.style.fontSize = `${fontSizePx}px`;
-            node.style.lineHeight = `${fontSizePx}px`;
-            node.style.height = `${fontSizePx}px`;
+        labels.forEach(({ node, textNode }) => {
+            const target = textNode || node.querySelector(".parcel-label-v3__text");
+            if (!target) return;
+            target.style.display = visible ? "inline-flex" : "none";
+            target.style.fontSize = `${fontSizePx}px`;
+            target.style.lineHeight = `${fontSizePx}px`;
+            target.style.height = `${fontSizePx}px`;
         });
     }
 
@@ -1173,10 +1187,12 @@
             const labelNode = createLabelNodeV3(String(parcel.id ?? ""));
             const labelMarker = new YMapMarker({
                 coordinates: [labelLon, labelLat],
-                zIndex: 2200
+                zIndex: 2200,
+                disableRoundCoordinates: true
             }, labelNode);
             map.addChild(labelMarker);
-            labelEntries.push({ marker: labelMarker, node: labelNode });
+            const textNode = labelNode.querySelector(".parcel-label-v3__text");
+            labelEntries.push({ marker: labelMarker, node: labelNode, textNode });
         });
 
         updateLabelNodesV3(labelEntries, Number.isFinite(map.zoom) ? map.zoom : mapViewCfg.baseZoom);

@@ -41,6 +41,11 @@
         #map .leaflet-control-attribution {
             display: none !important;
         }
+        /* Убираем браузерную focus-рамку у SVG полигонов Leaflet после клика */
+        #map .leaflet-pane > svg path.leaflet-interactive:focus,
+        #map .leaflet-pane > svg path.leaflet-interactive:focus-visible {
+            outline: none !important;
+        }
     </style>
 </head>
 <body>
@@ -720,7 +725,9 @@
         const labelGroup = L.layerGroup().addTo(map);
         const makeIcon = (text, fontSizePx) => L.divIcon({
             className: 'parcel-label',
-            html: makeLabelHtml(text, fontSizePx)
+            html: makeLabelHtml(text, fontSizePx),
+            iconSize: [0, 0],
+            iconAnchor: [0, 0]
         });
 
         const markers = parcels.filter(p => !p.isService).map(parcel => {
@@ -963,6 +970,13 @@
             applyMobileOnce();
         }
 
+        const clearSvgFocusRing = () => {
+            const active = document.activeElement;
+            if (active && typeof active.blur === "function" && active.tagName && active.tagName.toLowerCase() === "path") {
+                active.blur();
+            }
+        };
+
         if (showServicePolygons) {
             const servicePolygons = [];
             parcels.filter(p => p.isService).forEach(parcel => {
@@ -970,6 +984,7 @@
                 polygon.bindTooltip("Технический полигон", { sticky: true });
                 polygon.on("click", (e) => {
                     L.DomEvent.stopPropagation(e);
+                    clearSvgFocusRing();
                     servicePolygons.forEach(p => p.setStyle({ color: servicePolygonStyleLeaflet.color }));
                     polygon.setStyle({ color: servicePolygonActiveStrokeColor });
                 });
@@ -989,6 +1004,7 @@
 
             polygon.on('click', (e) => {
                 L.DomEvent.stopPropagation(e);
+                clearSvgFocusRing();
                 toggleLeafletParcelPopup(parcel, polygon, map);
             });
             polygon.on('mouseover', () => polygon.setStyle({ fillColor: colors[parcel.status].hover }));
