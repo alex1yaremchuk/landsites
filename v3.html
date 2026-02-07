@@ -90,7 +90,7 @@
             position: absolute;
             top: 120px;
             right: 14px;
-            z-index: 1700;
+            z-index: 10000;
             display: flex;
             flex-direction: column;
             gap: 8px;
@@ -108,6 +108,8 @@
             cursor: pointer;
             box-shadow: 0 8px 24px rgba(2, 6, 23, 0.28);
             padding: 0;
+            touch-action: manipulation;
+            -webkit-tap-highlight-color: transparent;
         }
         .map-v3-zoom button:active {
             transform: translateY(1px);
@@ -1015,12 +1017,18 @@
         zoomOutBtn.setAttribute("aria-label", "Уменьшить");
         zoomOutBtn.textContent = "−";
 
-        const stop = (e) => {
+        const stopOnly = (e) => {
+            e.stopPropagation();
+        };
+        const stopAndPrevent = (e) => {
             e.preventDefault();
             e.stopPropagation();
         };
-        ["click", "dblclick", "mousedown", "mouseup", "pointerdown", "pointerup", "touchstart", "touchend", "wheel"]
-            .forEach(evt => controls.addEventListener(evt, stop, { passive: false }));
+
+        ["mousedown", "mouseup", "pointerdown", "pointerup", "touchstart", "touchend"]
+            .forEach(evt => controls.addEventListener(evt, stopOnly, { passive: true }));
+        ["click", "dblclick", "wheel"]
+            .forEach(evt => controls.addEventListener(evt, stopAndPrevent, { passive: false }));
 
         const getMapCenter = () => (
             Array.isArray(map.center) && map.center.length === 2
@@ -1044,11 +1052,11 @@
         };
 
         zoomInBtn.addEventListener("click", (e) => {
-            stop(e);
+            stopAndPrevent(e);
             changeZoom(1);
         });
         zoomOutBtn.addEventListener("click", (e) => {
-            stop(e);
+            stopAndPrevent(e);
             changeZoom(-1);
         });
 
