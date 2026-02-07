@@ -115,7 +115,7 @@
 
 <!-- Yandex API v3 с ключом -->
 <script src="https://api-maps.yandex.ru/v3/?lang=ru_RU&apikey=bb452fd0-002b-4c60-a321-d7ab9e326744"></script>
-<script src="./v3-map-customization.config.js?v=20260207-3"></script>
+<script src="./v3-map-customization.config.js?v=20260207-6"></script>
 
 <script>
     const showServicePolygons = Boolean(window.showServicePolygons);
@@ -979,31 +979,6 @@
         map.setLocation({ center: adjustedCenter, zoom: targetZoom, duration: 0 });
     }
 
-    function addMapDimOverlayV3(map, YMapFeature) {
-        const worldBoundsLngLat = [
-            [-179.99, -85],
-            [179.99, -85],
-            [179.99, 85],
-            [-179.99, 85],
-            [-179.99, -85]
-        ];
-
-        const overlayFeature = new YMapFeature({
-            geometry: {
-                type: "Polygon",
-                coordinates: [worldBoundsLngLat]
-            },
-            style: {
-                fill: "#7b8390",
-                fillOpacity: 0.3,
-                stroke: []
-            }
-        });
-
-        map.addChild(overlayFeature);
-        return overlayFeature;
-    }
-
     function addCustomZoomControlsV3(map, minZoom, maxZoom) {
         const mapEl = document.getElementById("map");
         if (!mapEl) return;
@@ -1149,7 +1124,6 @@
         map.addChild(mapListener);
 
         const allCoords = parcels.filter(p => !p.isService).flatMap(p => p.coords);
-        addMapDimOverlayV3(map, YMapFeature);
         if (allCoords.length) {
             const lats = allCoords.map(c => c[0]);
             const lons = allCoords.map(c => c[1]);
