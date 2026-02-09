@@ -15,10 +15,8 @@
         #map {
             width: 100%;
             height: 100vh;
-        }
-        /* Приглушаем подложку для Yandex */
-        #map [class*="ymaps-"][class*="-ground-pane"] {
-            filter: grayscale(1) brightness(0.55) saturate(0.7);
+            position: relative;
+            overflow: hidden;
         }
         /* нижние лейблы Yandex Maps */
         #map [class*="ymaps-"][class*="-map-copyrights-promo"],
@@ -29,36 +27,106 @@
         #map [class*="ymaps-"][class*="-copyright"] {
             display: none !important;
         }
-        /* Выравнивание Leaflet под текущее позиционирование контролов Yandex */
-        #map .leaflet-top.leaflet-right .leaflet-control-zoom {
-            margin-top: 120px;
+        .parcel-label-v3 {
+            display: block;
+            margin: 0;
+            padding: 0;
+            font-size: 0;
+            line-height: 0;
+            pointer-events: none;
         }
-        /* Приглушаем подложку для Leaflet в том же стиле */
-        #map .leaflet-tile-pane {
-            filter: grayscale(1) brightness(0.55) saturate(0.7);
+        .parcel-label-v3__text {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            color: #000;
+            background: transparent;
+            font-weight: 600;
+            user-select: none;
+            white-space: nowrap;
+            transform: translate(-50%, -50%);
+            padding: 0 6px;
         }
-        /* Скрываем атрибуцию Leaflet/OSM */
-        #map .leaflet-control-attribution {
-            display: none !important;
+        .parcel-popup {
+            display: inline-block;
+            width: fit-content;
+            width: max-content;
+            max-width: none;
+            padding: 14px 16px;
+            border-radius: 14px;
+            background: #ffffff;
+            border: 1px solid rgba(148, 163, 184, 0.45);
+            box-shadow: 0 14px 32px rgba(2, 6, 23, 0.32);
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            position: relative;
+            transform: translate(-50%, calc(-100% - 10px));
+            transform-origin: 50% 100%;
+            pointer-events: auto;
         }
-        /* Убираем браузерную focus-рамку у SVG полигонов Leaflet после клика */
-        #map .leaflet-pane > svg path.leaflet-interactive:focus,
-        #map .leaflet-pane > svg path.leaflet-interactive:focus-visible {
-            outline: none !important;
+        .parcel-popup::after {
+            content: "";
+            position: absolute;
+            left: 50%;
+            bottom: -8px;
+            width: 14px;
+            height: 14px;
+            transform: translateX(-50%) rotate(45deg);
+            background: #ffffff;
+            border-right: 1px solid rgba(148, 163, 184, 0.45);
+            border-bottom: 1px solid rgba(148, 163, 184, 0.45);
+        }
+        .parcel-popup a {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 12px 16px;
+            background: #309f48;
+            color: #fff;
+            text-decoration: none;
+            border-radius: 10px;
+            font-weight: 700;
+        }
+        .map-v3-zoom {
+            position: absolute;
+            top: 120px;
+            right: 14px;
+            z-index: 10000;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            pointer-events: auto;
+        }
+        .map-v3-zoom button {
+            width: 40px;
+            height: 40px;
+            border: 0;
+            border-radius: 10px;
+            background: rgba(255, 255, 255, 0.95);
+            color: #111827;
+            font-size: 28px;
+            line-height: 1;
+            cursor: pointer;
+            box-shadow: 0 8px 24px rgba(2, 6, 23, 0.28);
+            padding: 0;
+            touch-action: manipulation;
+            -webkit-tap-highlight-color: transparent;
+        }
+        .map-v3-zoom button:active {
+            transform: translateY(1px);
+        }
+        .map-v3-zoom button[data-action="out"] {
+            font-size: 30px;
         }
     </style>
 </head>
 <body>
 <div id="map"></div>
 
-<!-- Локальные Leaflet без ключей -->
-<link rel="stylesheet" href="./leaflet.css"/>
-<script src="./leaflet.js"></script>
-<!-- Yandex API с ключом -->
-<script src="https://api-maps.yandex.ru/2.1/?lang=ru_RU&apikey=16d442f1-df6c-4a2d-a863-ed6a830dd524"></script>
+<!-- Yandex API v3 с ключом -->
+<script src="https://api-maps.yandex.ru/v3/?lang=ru_RU&apikey=16d442f1-df6c-4a2d-a863-ed6a830dd524"></script>
+<script src="./v3-map-customization.config.js?v=20260207-12"></script>
 
 <script>
-    const useLeaflet = true; // true = Leaflet, false = Yandex
     const showServicePolygons = Boolean(window.showServicePolygons);
 
     // Настройки стартового вида карты (можно менять)
@@ -604,14 +672,14 @@
         };
         const hasBooking = parcel.status === "free";
         const bookingButton = hasBooking
-            ? `<a href="${parcel.link}" target="_blank" style="display:inline-flex;align-items:center;gap:8px;padding:12px 16px;background:#309F48;color:#fff;text-decoration:none;border-radius:10px;font-weight:700;">Забронировать</a>`
+            ? `<a href="${parcel.link}" target="_blank">Забронировать</a>`
             : "";
         const displayId = parcel.id ?? "—";
         const statusText = statusLabels[parcel.status] ?? "";
         const statusColor = statusColors[parcel.status] ?? "#111827";
 
         return `
-            <div style="font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; ">
+            <div style="font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;">
                 <div style="font-size:16px;font-weight:700;color:#111827;margin-bottom:10px;">Участок №${displayId}</div>
                 <div style="font-size:14px;color:#4b5563;margin-bottom:6px;">Площадь: ${parcel.area} м²</div>
                 <div style="font-size:14px;color:#4b5563;margin-bottom:12px;">Статус: <span style="color:${statusColor};font-weight:700;">${statusText}</span></div>
@@ -822,6 +890,334 @@
         openedState.id = parcel.id;
     }
 
+    function toLngLatPath(coordsLatLon) {
+        return coordsLatLon.map(([lat, lon]) => [lon, lat]);
+    }
+
+    function getParcelBoundsCenter(parcel) {
+        const lats = parcel.coords.map(c => c[0]);
+        const lons = parcel.coords.map(c => c[1]);
+        return [
+            (Math.min(...lats) + Math.max(...lats)) / 2,
+            (Math.min(...lons) + Math.max(...lons)) / 2
+        ];
+    }
+
+    function getParcelStyleV3(parcel, isHover = false) {
+        const palette = colors[parcel.status] ?? colors.free;
+        return {
+            fill: isHover ? palette.hover : palette.base,
+            fillOpacity: 1,
+            stroke: [{ color: "#4c566a", width: 2 }]
+        };
+    }
+
+    function getServiceStyleV3(isActive = false) {
+        return {
+            fill: servicePolygonStyle.fillColor,
+            fillOpacity: servicePolygonStyle.fillOpacity,
+            stroke: [{
+                color: isActive ? servicePolygonActiveStrokeColor : servicePolygonStyle.strokeColor,
+                width: servicePolygonStyle.strokeWidth,
+                dash: [4, 6]
+            }]
+        };
+    }
+
+    function createLabelNodeV3(text) {
+        const node = document.createElement("div");
+        node.className = "parcel-label-v3";
+        const textNode = document.createElement("span");
+        textNode.className = "parcel-label-v3__text";
+        textNode.textContent = text;
+        node.appendChild(textNode);
+        return node;
+    }
+
+    function updateLabelNodesV3(labels, zoom) {
+        const visible = zoom >= showLabelsFromZoom;
+        const fontSizePx = Math.max(1, Math.round(makeLabelFontPx(zoom)));
+        labels.forEach(({ node, textNode }) => {
+            const target = textNode || node.querySelector(".parcel-label-v3__text");
+            if (!target) return;
+            target.style.display = visible ? "inline-flex" : "none";
+            target.style.fontSize = `${fontSizePx}px`;
+            target.style.lineHeight = `${fontSizePx}px`;
+            target.style.height = `${fontSizePx}px`;
+        });
+    }
+
+    function closeParcelPopupV3(map, popupState, interactiveEntities = null) {
+        if (popupState.marker) {
+            if (interactiveEntities) interactiveEntities.delete(popupState.marker);
+            map.removeChild(popupState.marker);
+            popupState.marker = null;
+            popupState.node = null;
+        }
+        openedState.id = null;
+    }
+
+    function toggleParcelPopupV3(map, parcel, YMapMarker, popupState, interactiveEntities = null) {
+        const isSame = openedState.id === parcel.id && popupState.marker;
+        if (isSame) {
+            closeParcelPopupV3(map, popupState, interactiveEntities);
+            return;
+        }
+        closeParcelPopupV3(map, popupState, interactiveEntities);
+
+        const [centerLat, centerLon] = getParcelBoundsCenter(parcel);
+        const popupNode = document.createElement("div");
+        popupNode.className = "parcel-popup";
+        popupNode.innerHTML = renderContent(parcel);
+        popupNode.addEventListener("click", (e) => e.stopPropagation());
+
+        const marker = new YMapMarker({
+            coordinates: [centerLon, centerLat],
+            zIndex: 2500
+        }, popupNode);
+        map.addChild(marker);
+        if (interactiveEntities) interactiveEntities.add(marker);
+
+        popupState.marker = marker;
+        popupState.node = popupNode;
+        openedState.id = parcel.id;
+    }
+
+    function applyMobileViewAdjustmentsYandexV3(map, minZoom, maxZoom) {
+        if (!isMobileView()) return;
+        const center = Array.isArray(map.center) ? map.center : [transformCfg.targetCenter.lon, transformCfg.targetCenter.lat];
+        const zoom = Number.isFinite(map.zoom) ? map.zoom : mapViewCfg.baseZoom;
+        const targetZoom = Math.min(maxZoom, Math.max(minZoom, zoom + mapViewCfg.mobile.zoomDelta));
+        const adjustedCenter = [
+            center[0] + mapViewCfg.mobile.offsetLon,
+            center[1] + mapViewCfg.mobile.offsetLat
+        ];
+        map.setLocation({ center: adjustedCenter, zoom: targetZoom, duration: 0 });
+    }
+
+    function addCustomZoomControlsV3(map, minZoom, maxZoom) {
+        const mapEl = document.getElementById("map");
+        if (!mapEl) return;
+
+        const prev = mapEl.querySelector(".map-v3-zoom");
+        if (prev) prev.remove();
+
+        const controls = document.createElement("div");
+        controls.className = "map-v3-zoom";
+
+        const zoomInBtn = document.createElement("button");
+        zoomInBtn.type = "button";
+        zoomInBtn.dataset.action = "in";
+        zoomInBtn.setAttribute("aria-label", "Увеличить");
+        zoomInBtn.textContent = "+";
+
+        const zoomOutBtn = document.createElement("button");
+        zoomOutBtn.type = "button";
+        zoomOutBtn.dataset.action = "out";
+        zoomOutBtn.setAttribute("aria-label", "Уменьшить");
+        zoomOutBtn.textContent = "−";
+
+        const stopOnly = (e) => {
+            e.stopPropagation();
+        };
+        const stopAndPrevent = (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+        };
+
+        ["mousedown", "mouseup", "pointerdown", "pointerup", "touchstart", "touchend"]
+            .forEach(evt => controls.addEventListener(evt, stopOnly, { passive: true }));
+        ["click", "dblclick", "wheel"]
+            .forEach(evt => controls.addEventListener(evt, stopAndPrevent, { passive: false }));
+
+        const getMapCenter = () => (
+            Array.isArray(map.center) && map.center.length === 2
+                ? map.center
+                : [transformCfg.targetCenter.lon, transformCfg.targetCenter.lat]
+        );
+
+        const getMapZoom = () => (
+            Number.isFinite(map.zoom) ? map.zoom : mapViewCfg.baseZoom
+        );
+
+        const changeZoom = (delta) => {
+            const currentZoom = getMapZoom();
+            const targetZoom = Math.min(maxZoom, Math.max(minZoom, currentZoom + delta));
+            if (targetZoom === currentZoom) return;
+            map.setLocation({
+                center: getMapCenter(),
+                zoom: targetZoom,
+                duration: 180
+            });
+        };
+
+        zoomInBtn.addEventListener("click", (e) => {
+            stopAndPrevent(e);
+            changeZoom(1);
+        });
+        zoomOutBtn.addEventListener("click", (e) => {
+            stopAndPrevent(e);
+            changeZoom(-1);
+        });
+
+        controls.appendChild(zoomInBtn);
+        controls.appendChild(zoomOutBtn);
+        mapEl.appendChild(controls);
+    }
+
+    function refreshYandexPolygonsV3(parcels, featureById, popupState) {
+        parcels.forEach(parcel => {
+            if (parcel.isService || !parcel.id) return;
+            const feature = featureById.get(parcel.id);
+            if (!feature) return;
+            feature.update({ style: getParcelStyleV3(parcel, false) });
+            if (openedState.id === parcel.id && popupState.node) {
+                popupState.node.innerHTML = renderContent(parcel);
+            }
+        });
+    }
+
+    async function initYandexV3() {
+        await ymaps3.ready;
+        const {
+            YMap,
+            YMapFeature,
+            YMapMarker,
+            YMapListener,
+            YMapDefaultSchemeLayer,
+            YMapDefaultFeaturesLayer
+        } = ymaps3;
+
+        const minZoom = 9;
+        const maxZoom = 18;
+        const map = new YMap(document.getElementById("map"), {
+            location: {
+                center: [transformCfg.targetCenter.lon, transformCfg.targetCenter.lat],
+                zoom: mapViewCfg.baseZoom
+            },
+            zoomRange: { min: minZoom, max: maxZoom },
+            mode: "vector",
+            copyrights: false,
+            distribution: false
+        });
+
+        const mapCustomization = Array.isArray(window.v3MapCustomization) ? window.v3MapCustomization : [];
+        map.addChild(new YMapDefaultSchemeLayer({
+            customization: mapCustomization
+        }));
+        map.addChild(new YMapDefaultFeaturesLayer({}));
+
+        addCustomZoomControlsV3(map, minZoom, maxZoom);
+
+        if (typeof map.setBehaviors === "function" && Array.isArray(map.behaviors) && map.behaviors.includes("scrollZoom")) {
+            map.setBehaviors(map.behaviors.filter(b => b !== "scrollZoom"));
+        }
+
+        const [statusResult, parcels] = await Promise.all([
+            loadSheetData().catch(err => {
+                console.error("Не загрузили статусы", err);
+                return { map: new Map(), maxUpdatedTs: null };
+            }),
+            loadParcelsGeoJSON()
+        ]);
+
+        const statusMap = statusResult.map;
+        applyStatusMapToParcels(statusMap, parcels);
+
+        const popupState = { marker: null, node: null };
+        const labelEntries = [];
+        const polygonById = new Map();
+        const interactiveEntities = new Set();
+
+        const mapListener = new YMapListener({
+            layer: "any",
+            onClick: (object) => {
+                const entity = object && object.entity ? object.entity : null;
+                if (!entity || !interactiveEntities.has(entity)) {
+                    closeParcelPopupV3(map, popupState, interactiveEntities);
+                }
+            },
+            onUpdate: ({ location }) => {
+                if (location && Number.isFinite(location.zoom)) {
+                    updateLabelNodesV3(labelEntries, location.zoom);
+                }
+            }
+        });
+        map.addChild(mapListener);
+
+        const allCoords = parcels.filter(p => !p.isService).flatMap(p => p.coords);
+        if (allCoords.length) {
+            const lats = allCoords.map(c => c[0]);
+            const lons = allCoords.map(c => c[1]);
+            map.setLocation({
+                bounds: [[Math.min(...lons), Math.min(...lats)], [Math.max(...lons), Math.max(...lats)]],
+                duration: 0
+            });
+            setTimeout(() => applyMobileViewAdjustmentsYandexV3(map, minZoom, maxZoom), 0);
+        } else {
+            applyMobileViewAdjustmentsYandexV3(map, minZoom, maxZoom);
+        }
+
+        if (showServicePolygons) {
+            const serviceFeatures = [];
+            parcels.filter(p => p.isService).forEach(parcel => {
+                const coordsLngLat = toLngLatPath(parcel.coords);
+                let feature = null;
+                feature = new YMapFeature({
+                    geometry: { type: "Polygon", coordinates: [coordsLngLat] },
+                    style: getServiceStyleV3(false),
+                    onClick: () => {
+                        serviceFeatures.forEach(f => f.update({ style: getServiceStyleV3(false) }));
+                        feature.update({ style: getServiceStyleV3(true) });
+                    }
+                });
+                map.addChild(feature);
+                serviceFeatures.push(feature);
+                interactiveEntities.add(feature);
+            });
+        }
+
+        parcels.filter(p => !p.isService).forEach(parcel => {
+            const coordsLngLat = toLngLatPath(parcel.coords);
+            let feature = null;
+            feature = new YMapFeature({
+                geometry: { type: "Polygon", coordinates: [coordsLngLat] },
+                style: getParcelStyleV3(parcel, false),
+                onClick: () => toggleParcelPopupV3(map, parcel, YMapMarker, popupState, interactiveEntities),
+                onMouseEnter: () => feature.update({ style: getParcelStyleV3(parcel, true) }),
+                onMouseLeave: () => feature.update({ style: getParcelStyleV3(parcel, false) })
+            });
+            map.addChild(feature);
+            polygonById.set(parcel.id, feature);
+            interactiveEntities.add(feature);
+
+            const [labelLat, labelLon] = labelPointFromRaw(parcel.coordsRaw, parcel.id);
+            const labelNode = createLabelNodeV3(String(parcel.id ?? ""));
+            const labelMarker = new YMapMarker({
+                coordinates: [labelLon, labelLat],
+                zIndex: 2200,
+                disableRoundCoordinates: true
+            }, labelNode);
+            map.addChild(labelMarker);
+            const textNode = labelNode.querySelector(".parcel-label-v3__text");
+            labelEntries.push({ marker: labelMarker, node: labelNode, textNode });
+        });
+
+        updateLabelNodesV3(labelEntries, Number.isFinite(map.zoom) ? map.zoom : mapViewCfg.baseZoom);
+
+        setInterval(async () => {
+            if (sheetRefreshState.inFlight) return;
+            sheetRefreshState.inFlight = true;
+            try {
+                const result = await loadSheetData();
+                const changed = applyStatusMapToParcels(result.map, parcels);
+                if (changed) refreshYandexPolygonsV3(parcels, polygonById, popupState);
+            } finally {
+                sheetRefreshState.inFlight = false;
+            }
+        }, 20000);
+    }
+
     async function initYandex() {
         const minZoom = 9;
         const maxZoom = 18;
@@ -970,13 +1366,6 @@
             applyMobileOnce();
         }
 
-        const clearSvgFocusRing = () => {
-            const active = document.activeElement;
-            if (active && typeof active.blur === "function" && active.tagName && active.tagName.toLowerCase() === "path") {
-                active.blur();
-            }
-        };
-
         if (showServicePolygons) {
             const servicePolygons = [];
             parcels.filter(p => p.isService).forEach(parcel => {
@@ -984,7 +1373,6 @@
                 polygon.bindTooltip("Технический полигон", { sticky: true });
                 polygon.on("click", (e) => {
                     L.DomEvent.stopPropagation(e);
-                    clearSvgFocusRing();
                     servicePolygons.forEach(p => p.setStyle({ color: servicePolygonStyleLeaflet.color }));
                     polygon.setStyle({ color: servicePolygonActiveStrokeColor });
                 });
@@ -1004,7 +1392,6 @@
 
             polygon.on('click', (e) => {
                 L.DomEvent.stopPropagation(e);
-                clearSvgFocusRing();
                 toggleLeafletParcelPopup(parcel, polygon, map);
             });
             polygon.on('mouseover', () => polygon.setStyle({ fillColor: colors[parcel.status].hover }));
@@ -1037,22 +1424,13 @@
         });
     }
 
-    if (useLeaflet) {
-        initLeaflet().catch(err => {
+    if (window.ymaps3) {
+        initYandexV3().catch(err => {
             console.error(err);
-            document.getElementById('map').innerText = "Не удалось загрузить карту (Leaflet): " + err;
+            document.getElementById('map').innerText = "Не удалось загрузить карту (Yandex v3): " + err;
         });
     } else {
-        if (window.ymaps) {
-            ymaps.ready(() => {
-                initYandex().catch(err => {
-                    console.error(err);
-                    document.getElementById('map').innerText = "Не удалось загрузить карту (Yandex): " + err;
-                });
-            });
-        } else {
-            document.getElementById('map').innerText = "Yandex Maps API не загрузился (проверь сеть/ключ).";
-        }
+        document.getElementById('map').innerText = "Yandex Maps API v3 не загрузился (проверь сеть/ключ).";
     }
 </script>
 </body>
