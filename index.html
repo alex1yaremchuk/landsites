@@ -117,6 +117,27 @@
         .map-v3-zoom button[data-action="out"] {
             font-size: 30px;
         }
+        .road-label-v3 {
+            display: block;
+            margin: 0;
+            padding: 0;
+            font-size: 0;
+            line-height: 0;
+            pointer-events: none;
+            user-select: none;
+            white-space: nowrap;
+        }
+        .road-label-v3__text {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            transform: translate(-50%, -50%);
+            transform-origin: center center;
+            pointer-events: none;
+            user-select: none;
+            white-space: nowrap;
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+        }
     </style>
 </head>
 <body>
@@ -124,7 +145,7 @@
 
 <!-- Yandex API v3 с ключом -->
 <script src="https://api-maps.yandex.ru/v3/?lang=ru_RU&apikey=16d442f1-df6c-4a2d-a863-ed6a830dd524"></script>
-<script src="./v3-map-customization.config.js?v=20260209-01"></script>
+<script src="./v3-map-customization.config.js?v=20260209-04"></script>
 
 <script>
     const showServicePolygons = Boolean(window.showServicePolygons);
@@ -185,6 +206,25 @@
         { zoom: 17, size: 12 },
         { zoom: 18, size: 14 }
     ];
+    const a107LabelCfg = {
+        text: "Московское малое кольцо - А107",
+        center: { lat: 55.369661, lon: 38.091832 },
+        offsetMeters: {
+            east: 0,   // + на восток, - на запад
+            north: 0   // + на север, - на юг
+        },
+        rotationDeg: -8,
+        fontSizePx: 16,
+        fontWeight: 500,
+        fontColor: "#ffffff",
+        backgroundColor: "rgba(45, 112, 216, 0.0)",
+        borderColor: "rgba(28, 84, 176, 0.0)",
+        borderWidthPx: 1,
+        borderRadiusPx: 4,
+        paddingXpx: 8,
+        paddingYpx: 3,
+        zIndex: 2150
+    };
 
     // Трансформация (не трогаем)
     const transformCfg = {
@@ -894,6 +934,54 @@
         return coordsLatLon.map(([lat, lon]) => [lon, lat]);
     }
 
+    function isPointInPolygonLatLon(lat, lon, ringLatLon) {
+        let inside = false;
+        for (let i = 0, len = ringLatLon.length, j = len - 1; i < len; j = i++) {
+            const yi = ringLatLon[i][0];
+            const xi = ringLatLon[i][1];
+            const yj = ringLatLon[j][0];
+            const xj = ringLatLon[j][1];
+            const intersects = ((yi > lat) !== (yj > lat)) &&
+                (lon < ((xj - xi) * (lat - yi)) / (yj - yi) + xi);
+            if (intersects) inside = !inside;
+        }
+        return inside;
+    }
+
+    function findParcelByLngLat(parcels, lngLat) {
+        if (!Array.isArray(lngLat) || lngLat.length !== 2) return null;
+        const lon = Number(lngLat[0]);
+        const lat = Number(lngLat[1]);
+        if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+        for (let i = 0; i < parcels.length; i++) {
+            const parcel = parcels[i];
+            if (!parcel || parcel.isService || !Array.isArray(parcel.coords) || parcel.coords.length < 3) continue;
+            if (isPointInPolygonLatLon(lat, lon, parcel.coords)) return parcel;
+        }
+        return null;
+    }
+
+    function extractClickLngLat(object, event) {
+        const candidates = [
+            object && object.coordinates,
+            object && object.lngLat,
+            event && event.coordinates,
+            event && event.lngLat
+        ];
+        for (let i = 0; i < candidates.length; i++) {
+            const value = candidates[i];
+            if (
+                Array.isArray(value) &&
+                value.length === 2 &&
+                Number.isFinite(Number(value[0])) &&
+                Number.isFinite(Number(value[1]))
+            ) {
+                return [Number(value[0]), Number(value[1])];
+            }
+        }
+        return null;
+    }
+
     function getParcelBoundsCenter(parcel) {
         const lats = parcel.coords.map(c => c[0]);
         const lons = parcel.coords.map(c => c[1]);
@@ -947,6 +1035,33 @@
         });
     }
 
+    function shiftLatLonByMeters(lat, lon, eastMeters = 0, northMeters = 0) {
+        const latDelta = Number(northMeters) / metersPerDegLat;
+        const cosLat = Math.cos((Number(lat) * Math.PI) / 180);
+        const lonMetersFactor = metersPerDegLat * (Math.abs(cosLat) < 1e-8 ? 1e-8 : cosLat);
+        const lonDelta = Number(eastMeters) / lonMetersFactor;
+        return [Number(lat) + latDelta, Number(lon) + lonDelta];
+    }
+
+    function createRoadLabelNodeV3(config) {
+        const node = document.createElement("div");
+        node.className = "road-label-v3";
+
+        const textNode = document.createElement("span");
+        textNode.className = "road-label-v3__text";
+        textNode.textContent = String(config.text || "");
+        textNode.style.fontSize = `${Math.max(1, Number(config.fontSizePx) || 14)}px`;
+        textNode.style.fontWeight = String(config.fontWeight || 700);
+        textNode.style.color = String(config.fontColor || "#ffffff");
+        textNode.style.background = String(config.backgroundColor || "rgba(45, 112, 216, 0.95)");
+        textNode.style.border = `${Math.max(0, Number(config.borderWidthPx) || 0)}px solid ${String(config.borderColor || "transparent")}`;
+        textNode.style.borderRadius = `${Math.max(0, Number(config.borderRadiusPx) || 0)}px`;
+        textNode.style.padding = `${Math.max(0, Number(config.paddingYpx) || 0)}px ${Math.max(0, Number(config.paddingXpx) || 0)}px`;
+        textNode.style.transform = `translate(-50%, -50%) rotate(${Number(config.rotationDeg) || 0}deg)`;
+        node.appendChild(textNode);
+        return node;
+    }
+
     function closeParcelPopupV3(map, popupState, interactiveEntities = null) {
         if (popupState.marker) {
             if (interactiveEntities) interactiveEntities.delete(popupState.marker);
@@ -957,10 +1072,10 @@
         openedState.id = null;
     }
 
-    function toggleParcelPopupV3(map, parcel, YMapMarker, popupState, interactiveEntities = null) {
+    function openParcelPopupV3(map, parcel, YMapMarker, popupState, interactiveEntities = null) {
         const isSame = openedState.id === parcel.id && popupState.marker;
         if (isSame) {
-            closeParcelPopupV3(map, popupState, interactiveEntities);
+            if (popupState.node) popupState.node.innerHTML = renderContent(parcel);
             return;
         }
         closeParcelPopupV3(map, popupState, interactiveEntities);
@@ -1128,11 +1243,37 @@
         const labelEntries = [];
         const polygonById = new Map();
         const interactiveEntities = new Set();
+        const labelParcelByMarker = new Map();
+        let lastInteractiveClickAt = 0;
+        const nowTs = () => (
+            typeof performance !== "undefined" && typeof performance.now === "function"
+                ? performance.now()
+                : Date.now()
+        );
+        const markInteractiveClick = () => {
+            lastInteractiveClickAt = nowTs();
+        };
 
         const mapListener = new YMapListener({
             layer: "any",
-            onClick: (object) => {
+            onClick: (object, event) => {
                 const entity = object && object.entity ? object.entity : null;
+                if (entity && labelParcelByMarker.has(entity)) {
+                    const parcel = labelParcelByMarker.get(entity);
+                    if (parcel) {
+                        markInteractiveClick();
+                        openParcelPopupV3(map, parcel, YMapMarker, popupState, interactiveEntities);
+                        return;
+                    }
+                }
+                if (nowTs() - lastInteractiveClickAt < 160) return;
+                const clickLngLat = extractClickLngLat(object, event);
+                const clickedParcel = findParcelByLngLat(parcels, clickLngLat);
+                if (clickedParcel) {
+                    markInteractiveClick();
+                    openParcelPopupV3(map, clickedParcel, YMapMarker, popupState, interactiveEntities);
+                    return;
+                }
                 if (!entity || !interactiveEntities.has(entity)) {
                     closeParcelPopupV3(map, popupState, interactiveEntities);
                 }
@@ -1144,6 +1285,20 @@
             }
         });
         map.addChild(mapListener);
+
+        const [a107LabelLat, a107LabelLon] = shiftLatLonByMeters(
+            a107LabelCfg.center.lat,
+            a107LabelCfg.center.lon,
+            a107LabelCfg.offsetMeters.east,
+            a107LabelCfg.offsetMeters.north
+        );
+        const a107LabelNode = createRoadLabelNodeV3(a107LabelCfg);
+        const a107LabelMarker = new YMapMarker({
+            coordinates: [a107LabelLon, a107LabelLat],
+            zIndex: Number(a107LabelCfg.zIndex) || 2150,
+            disableRoundCoordinates: true
+        }, a107LabelNode);
+        map.addChild(a107LabelMarker);
 
         const allCoords = parcels.filter(p => !p.isService).flatMap(p => p.coords);
         if (allCoords.length) {
@@ -1167,6 +1322,7 @@
                     geometry: { type: "Polygon", coordinates: [coordsLngLat] },
                     style: getServiceStyleV3(false),
                     onClick: () => {
+                        markInteractiveClick();
                         serviceFeatures.forEach(f => f.update({ style: getServiceStyleV3(false) }));
                         feature.update({ style: getServiceStyleV3(true) });
                     }
@@ -1183,7 +1339,10 @@
             feature = new YMapFeature({
                 geometry: { type: "Polygon", coordinates: [coordsLngLat] },
                 style: getParcelStyleV3(parcel, false),
-                onClick: () => toggleParcelPopupV3(map, parcel, YMapMarker, popupState, interactiveEntities),
+                onClick: () => {
+                    markInteractiveClick();
+                    openParcelPopupV3(map, parcel, YMapMarker, popupState, interactiveEntities);
+                },
                 onMouseEnter: () => feature.update({ style: getParcelStyleV3(parcel, true) }),
                 onMouseLeave: () => feature.update({ style: getParcelStyleV3(parcel, false) })
             });
@@ -1199,6 +1358,7 @@
                 disableRoundCoordinates: true
             }, labelNode);
             map.addChild(labelMarker);
+            labelParcelByMarker.set(labelMarker, parcel);
             const textNode = labelNode.querySelector(".parcel-label-v3__text");
             labelEntries.push({ marker: labelMarker, node: labelNode, textNode });
         });
